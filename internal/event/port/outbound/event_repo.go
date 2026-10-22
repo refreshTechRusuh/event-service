@@ -6,14 +6,23 @@ import (
 	"github.com/refreshTechRusuh/event-service/internal/event/domain/entity"
 )
 
+// IEventRepository mengelola persistensi event dan ticket_category.
 type IEventRepository interface {
 	ListAll(ctx context.Context) ([]entity.Event, error)
 	GetByID(ctx context.Context, id string) (entity.Event, error)
 	Create(ctx context.Context, e entity.Event) error
 	Update(ctx context.Context, e entity.Event) error
-	Delete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string) error // soft delete (set status=closed)
 
 	ListCategories(ctx context.Context, eventID string) ([]entity.TicketCategory, error)
+	GetCategoryByID(ctx context.Context, categoryID string) (entity.TicketCategory, error) // dibutuhkan UpdateCategory
 	CreateCategory(ctx context.Context, c entity.TicketCategory) error
 	UpdateCategory(ctx context.Context, c entity.TicketCategory) error
+}
+
+// IEventProducer mempublish event ke Kafka (opsional — nil di test/local tanpa Kafka).
+type IEventProducer interface {
+	// PublishEventSoldOut mempublish event.sold_out saat semua stok habis.
+	// Dikonsumsi Queue Service untuk menutup antrian.
+	PublishEventSoldOut(ctx context.Context, eventID string, payload any) error
 }

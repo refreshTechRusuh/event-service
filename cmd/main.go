@@ -13,6 +13,7 @@ import (
 	"github.com/refreshTechRusuh/event-service/internal/config"
 	"github.com/refreshTechRusuh/event-service/internal/delivery"
 	pkgdb "github.com/refreshTechRusuh/event-service/pkg/db"
+	"github.com/refreshTechRusuh/event-service/pkg/kafka"
 	"github.com/refreshTechRusuh/event-service/pkg/middleware"
 )
 
@@ -33,14 +34,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	mux, closeDeps, err := delivery.New(rootCtx, cfg, pool)
+	producer := kafka.NewProducer(cfg.Kafka, slog.Default())
+
+	mux, closeDeps, err := delivery.New(rootCtx, cfg, pool, producer)
 	if err != nil {
 		slog.Error("failed to init server", "err", err)
 		os.Exit(1)
 	}
 	defer closeDeps()
 
-	handler := middleware.Chain(mux, middleware.TransactionID, middleware.OptionalAuth(cfg.JWT.AccessTokenSecret))
+	handler := middleware.Chain(
+		mux,
+		middleware.TransactionID,
+		middleware.OptionalAuth(cfg.JWT.AccessTokenSecret),
+	)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
@@ -51,16 +58,21 @@ func main() {
 	go func() {
 		slog.Info("event-service listening", "port", cfg.App.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "err", err); os.Exit(1)
+			slog.Error("server error", "err", err)
+			os.Exit(1)
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+
+	slog.Info("shutting down...")
 	cancelRoot()
 	shutCtx, cancelShut := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShut()
-	srv.Shutdown(shutCtx)
+	if err := srv.Shutdown(shutCtx); err != nil {
+		slog.Error("shutdown error", "err", err)
+	}
 	slog.Info("event-service stopped")
 }

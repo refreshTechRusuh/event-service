@@ -2,10 +2,10 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/refreshTechRusuh/event-service/internal/event/domain/dto"
 	"github.com/refreshTechRusuh/event-service/internal/event/domain/entity"
 	"github.com/refreshTechRusuh/event-service/internal/event/port/outbound"
@@ -13,13 +13,16 @@ import (
 )
 
 type EventUsecase struct {
-	repo outbound.IEventRepository
-	log  *slog.Logger
+	repo     outbound.IEventRepository
+	producer outbound.IEventProducer // opsional — nil bila tidak ada Kafka
+	log      *slog.Logger
 }
 
-func NewEventUsecase(repo outbound.IEventRepository, log *slog.Logger) *EventUsecase {
-	return &EventUsecase{repo: repo, log: log}
+func NewEventUsecase(repo outbound.IEventRepository, producer outbound.IEventProducer, log *slog.Logger) *EventUsecase {
+	return &EventUsecase{repo: repo, producer: producer, log: log}
 }
+
+// ---- Public read -----------------------------------------------------------
 
 func (u *EventUsecase) ListEvents(ctx context.Context) ([]dto.EventListItem, error) {
 	events, err := u.repo.ListAll(ctx)
@@ -48,10 +51,14 @@ func (u *EventUsecase) GetEventDetail(ctx context.Context, eventID string) (dto.
 	}
 	catDTOs := make([]dto.CategoryDTO, 0, len(cats))
 	for _, c := range cats {
-		catDTOs = append(catDTOs, dto.CategoryDTO{ID: c.ID, Name: c.Name, Price: c.Price, Available: c.Available})
+		catDTOs = append(catDTOs, dto.CategoryDTO{
+			ID: c.ID, Name: c.Name, Price: c.Price, Available: c.Available,
+		})
 	}
 	return dto.EventDetail{ID: e.ID, Name: e.Name, Status: string(e.Status), Categories: catDTOs}, nil
 }
+
+// ---- Admin -----------------------------------------------------------------
 
 func (u *EventUsecase) AdminListEvents(ctx context.Context) ([]dto.AdminEventListItem, error) {
 	events, err := u.repo.ListAll(ctx)
@@ -63,15 +70,25 @@ func (u *EventUsecase) AdminListEvents(ctx context.Context) ([]dto.AdminEventLis
 		cats, _ := u.repo.ListCategories(ctx, e.ID)
 		catDTOs := make([]dto.CategoryDTO, 0, len(cats))
 		for _, c := range cats {
-			catDTOs = append(catDTOs, dto.CategoryDTO{ID: c.ID, Name: c.Name, Price: c.Price, Available: c.Available, Capacity: c.Capacity})
+			catDTOs = append(catDTOs, dto.CategoryDTO{
+				ID: c.ID, Name: c.Name, Price: c.Price,
+				Available: c.Available, Capacity: c.Capacity,
+			})
 		}
-		result = append(result, dto.AdminEventListItem{ID: e.ID, Name: e.Name, Status: string(e.Status), Categories: catDTOs})
+		result = append(result, dto.AdminEventListItem{
+			ID: e.ID, Name: e.Name, Status: string(e.Status), Categories: catDTOs,
+		})
 	}
 	return result, nil
 }
 
 func (u *EventUsecase) CreateEvent(ctx context.Context, req dto.CreateEventRequest) (dto.AdminEventListItem, error) {
-	e := entity.Event{ID: newUUID(), Name: req.Name, Status: entity.EventStatus(req.Status), CreatedAt: time.Now()}
+	e := entity.Event{
+		ID:        uuid.New().String(),
+		Name:      req.Name,
+		Status:    entity.EventStatus(req.Status),
+		CreatedAt: time.Now(),
+	}
 	if req.SaleOpensAt != "" {
 		t, err := time.Parse(time.RFC3339, req.SaleOpensAt)
 		if err != nil {
@@ -90,8 +107,19 @@ func (u *EventUsecase) UpdateEvent(ctx context.Context, eventID string, req dto.
 	if err != nil {
 		return dto.AdminEventListItem{}, apperror.NotFound("event")
 	}
-	if req.Name != "" { e.Name = req.Name }
-	if req.Status != "" { e.Status = entity.EventStatus(req.Status) }
+	if req.Name != "" {
+		e.Name = req.Name
+	}
+	if req.Status != "" {
+		e.Status = entity.EventStatus(req.Status)
+	}
+	if req.SaleOpensAt != "" {
+		t, err := time.Parse(time.RFC3339, req.SaleOpensAt)
+		if err != nil {
+			return dto.AdminEventListItem{}, apperror.Validation("saleOpensAt format harus ISO-8601")
+		}
+		e.SaleOpensAt = &t
+	}
 	if err := u.repo.Update(ctx, e); err != nil {
 		return dto.AdminEventListItem{}, apperror.Internal(err)
 	}
@@ -99,26 +127,94 @@ func (u *EventUsecase) UpdateEvent(ctx context.Context, eventID string, req dto.
 }
 
 func (u *EventUsecase) DeleteEvent(ctx context.Context, eventID string) error {
+	// Soft delete: set status = closed
 	return u.repo.Delete(ctx, eventID)
 }
 
+// ---- Category CRUD ---------------------------------------------------------
+
 func (u *EventUsecase) CreateCategory(ctx context.Context, eventID string, req dto.CreateCategoryRequest) (dto.CategoryDTO, error) {
+	// Pastikan event ada
+	if _, err := u.repo.GetByID(ctx, eventID); err != nil {
+		return dto.CategoryDTO{}, apperror.NotFound("event")
+	}
+
 	c := entity.TicketCategory{
-		ID: newUUID(), EventID: eventID, Name: req.Name,
-		Price: req.Price, Capacity: req.Capacity, Available: req.Capacity, // available = capacity saat dibuat
+		ID:        uuid.New().String(),
+		EventID:   eventID,
+		Name:      req.Name,
+		Price:     req.Price,
+		Capacity:  req.Capacity,
+		Available: req.Capacity, // available = capacity saat pertama dibuat (Req 13.2)
 	}
 	if err := u.repo.CreateCategory(ctx, c); err != nil {
 		return dto.CategoryDTO{}, apperror.Internal(err)
 	}
-	return dto.CategoryDTO{ID: c.ID, Name: c.Name, Price: c.Price, Available: c.Available, Capacity: c.Capacity}, nil
+	return dto.CategoryDTO{
+		ID: c.ID, Name: c.Name, Price: c.Price,
+		Available: c.Available, Capacity: c.Capacity,
+	}, nil
 }
 
+// UpdateCategory mengubah kategori dengan guard: available_baru >= 0.
+// Rumus: available_baru = capacity_baru - (capacity_lama - available_lama)
+// = available_lama + (capacity_baru - capacity_lama)
+// Artinya: kenaikan capacity → naikkan available; penurunan capacity → kurangi available.
+// Tolak bila capacity_baru < (capacity_lama - available_lama) karena available_baru < 0. (Req 13.3, 13.4)
 func (u *EventUsecase) UpdateCategory(ctx context.Context, categoryID string, req dto.UpdateCategoryRequest) (dto.CategoryDTO, error) {
-	// Usecase mengambil category saat ini, menghitung available_baru = capacity_baru - (capacity_lama - available_lama)
-	// Implementasi lengkap di Task B2-1.4
-	return dto.CategoryDTO{ID: categoryID}, nil
+	current, err := u.repo.GetCategoryByID(ctx, categoryID)
+	if err != nil {
+		return dto.CategoryDTO{}, apperror.NotFound("kategori")
+	}
+
+	updated := current // copy
+
+	if req.Name != "" {
+		updated.Name = req.Name
+	}
+	if req.Price > 0 {
+		updated.Price = req.Price
+	}
+	if req.Capacity > 0 && req.Capacity != current.Capacity {
+		// Hitung available baru
+		tiketTerjual := current.Capacity - current.Available // tiket yang sudah terpesan/terjual
+		availableBaru := req.Capacity - tiketTerjual
+		if availableBaru < 0 {
+			return dto.CategoryDTO{}, apperror.New(apperror.ErrValidation,
+				"capacity baru tidak boleh membuat available < 0 (sudah ada tiket terjual/hold)")
+		}
+		updated.Capacity = req.Capacity
+		updated.Available = availableBaru
+	}
+
+	if err := u.repo.UpdateCategory(ctx, updated); err != nil {
+		return dto.CategoryDTO{}, apperror.Internal(err)
+	}
+	return dto.CategoryDTO{
+		ID: updated.ID, Name: updated.Name, Price: updated.Price,
+		Available: updated.Available, Capacity: updated.Capacity,
+	}, nil
 }
 
-func newUUID() string {
-	return fmt.Sprintf("evt-%d", time.Now().UnixNano())
+// MarkSoldOut dipanggil oleh Booking Service (via event Kafka atau internal call)
+// saat semua available = 0. (Req 15.1)
+func (u *EventUsecase) MarkSoldOut(ctx context.Context, eventID string) error {
+	e, err := u.repo.GetByID(ctx, eventID)
+	if err != nil {
+		return apperror.NotFound("event")
+	}
+	if e.Status == entity.EventStatusSoldOut {
+		return nil // idempoten
+	}
+	e.Status = entity.EventStatusSoldOut
+	if err := u.repo.Update(ctx, e); err != nil {
+		return apperror.Internal(err)
+	}
+	// Publish event.sold_out ke Kafka agar Queue Service menutup antrian
+	if u.producer != nil {
+		go u.producer.PublishEventSoldOut(context.WithoutCancel(ctx), eventID,
+			map[string]string{"eventId": eventID})
+	}
+	u.log.InfoContext(ctx, "event marked sold_out", slog.String("eventId", eventID))
+	return nil
 }

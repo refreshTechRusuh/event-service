@@ -6,6 +6,7 @@ import (
 	"github.com/refreshTechRusuh/event-service/internal/event/domain/dto"
 )
 
+// IEventUsecase adalah kontrak yang dipanggil HTTP handler.
 type IEventUsecase interface {
 	// Public
 	ListEvents(ctx context.Context) ([]dto.EventListItem, error)
@@ -19,4 +20,7 @@ type IEventUsecase interface {
 
 	CreateCategory(ctx context.Context, eventID string, req dto.CreateCategoryRequest) (dto.CategoryDTO, error)
 	UpdateCategory(ctx context.Context, categoryID string, req dto.UpdateCategoryRequest) (dto.CategoryDTO, error)
+
+	// Internal — dipanggil saat Booking Service mendeteksi sold-out
+	MarkSoldOut(ctx context.Context, eventID string) error
 }
