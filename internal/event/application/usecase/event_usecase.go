@@ -83,10 +83,14 @@ func (u *EventUsecase) AdminListEvents(ctx context.Context) ([]dto.AdminEventLis
 }
 
 func (u *EventUsecase) CreateEvent(ctx context.Context, req dto.CreateEventRequest) (dto.AdminEventListItem, error) {
+	status := req.Status
+	if status == "" {
+		status = "draft" // default sesuai openapi.yaml AdminCreateEventRequest
+	}
 	e := entity.Event{
 		ID:        uuid.New().String(),
 		Name:      req.Name,
-		Status:    entity.EventStatus(req.Status),
+		Status:    entity.EventStatus(status),
 		CreatedAt: time.Now(),
 	}
 	if req.SaleOpensAt != "" {

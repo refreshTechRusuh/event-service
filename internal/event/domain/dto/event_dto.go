@@ -29,7 +29,7 @@ type EventDetail struct {
 type CreateEventRequest struct {
 	Name        string `json:"name"        validate:"required"`
 	SaleOpensAt string `json:"saleOpensAt"`
-	Status      string `json:"status"      validate:"oneof=draft on_sale closed"`
+	Status      string `json:"status"      validate:"omitempty,oneof=draft on_sale closed"` // opsional, default draft
 }
 
 type UpdateEventRequest struct {
