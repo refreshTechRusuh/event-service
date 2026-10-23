@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,14 +12,14 @@ import (
 	"github.com/refreshTechRusuh/event-service/pkg/middleware"
 )
 
-func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *kafka.Producer) (*http.ServeMux, func(), error) {
+func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *kafka.Producer) (http.Handler, func(), error) {
 	mux := http.NewServeMux()
 
 	handler := eventhttp.NewWiredHandler(pool, producer)
 	eventhttp.RegisterRoutes(mux, handler, cfg.JWT.AccessTokenSecret)
 
-	// OptionalAuth di level mux agar role tersedia di semua route.
-	_ = middleware.OptionalAuth // dipakai di handler via Chain
+	// Wrap seluruh mux dengan request logger — catat semua inbound request.
+	logged := middleware.RequestLogger(slog.Default())(mux)
 
 	closeFn := func() {
 		pool.Close()
@@ -26,5 +27,5 @@ func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *ka
 			producer.Close()
 		}
 	}
-	return mux, closeFn, nil
+	return logged, closeFn, nil
 }

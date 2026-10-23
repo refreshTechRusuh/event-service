@@ -43,9 +43,10 @@ func main() {
 	}
 	defer closeDeps()
 
+	// handler dari delivery.New sudah di-wrap RequestLogger.
+	// OptionalAuth di-chain agar role tersedia di semua route non-protected.
 	handler := middleware.Chain(
 		mux,
-		middleware.TransactionID,
 		middleware.OptionalAuth(cfg.JWT.AccessTokenSecret),
 	)
 
