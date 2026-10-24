@@ -10,6 +10,7 @@ import (
 type IEventRepository interface {
 	ListAll(ctx context.Context) ([]entity.Event, error)
 	GetByID(ctx context.Context, id string) (entity.Event, error)
+	ExistsByName(ctx context.Context, name string) (bool, error) // uniqueness check
 	Create(ctx context.Context, e entity.Event) error
 	Update(ctx context.Context, e entity.Event) error
 	Delete(ctx context.Context, id string) error // soft delete (set status=closed)

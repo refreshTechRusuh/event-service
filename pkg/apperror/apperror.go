@@ -26,6 +26,7 @@ const (
 	// 409
 	ErrStockUnavailable ErrorCode = "STOCK_UNAVAILABLE"
 	ErrQueueDuplicate   ErrorCode = "QUEUE_DUPLICATE"
+	ErrDuplicateEvent   ErrorCode = "DUPLICATE_EVENT"
 
 	// 410
 	ErrTokenExpired     ErrorCode = "TOKEN_EXPIRED"
@@ -78,5 +79,6 @@ func TokenExpired() *AppError                { return New(ErrTokenExpired, "Wakt
 func BookingExpired() *AppError              { return New(ErrBookingExpired, "Waktu pembayaran telah habis") }
 func SoldOut() *AppError                     { return New(ErrSoldOut, "Tiket sudah habis terjual") }
 func MethodTimeInsufficient() *AppError      { return New(ErrMethodTimeInsufficient, "Sisa waktu tidak cukup untuk metode ini") }
+func DuplicateEvent(name string) *AppError   { return New(ErrDuplicateEvent, "Event dengan nama '"+name+"' sudah ada") }
 func NotFound(resource string) *AppError     { return New(ErrNotFound, resource+" tidak ditemukan") }
 func Internal(cause error) *AppError         { return Wrap(ErrInternal, "Terjadi kesalahan pada server", cause) }

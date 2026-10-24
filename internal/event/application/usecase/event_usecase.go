@@ -87,6 +87,14 @@ func (u *EventUsecase) CreateEvent(ctx context.Context, req dto.CreateEventReque
 	if status == "" {
 		status = "draft" // default sesuai openapi.yaml AdminCreateEventRequest
 	}
+	// Uniqueness check: tolak nama yang sudah ada (case-insensitive)
+	exists, err := u.repo.ExistsByName(ctx, req.Name)
+	if err != nil {
+		return dto.AdminEventListItem{}, apperror.Internal(err)
+	}
+	if exists {
+		return dto.AdminEventListItem{}, apperror.DuplicateEvent(req.Name)
+	}
 	e := entity.Event{
 		ID:        uuid.New().String(),
 		Name:      req.Name,

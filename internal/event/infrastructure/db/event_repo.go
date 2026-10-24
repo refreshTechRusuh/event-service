@@ -47,6 +47,17 @@ func (r *EventRepository) GetByID(ctx context.Context, id string) (entity.Event,
 	return e, nil
 }
 
+func (r *EventRepository) ExistsByName(ctx context.Context, name string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM event WHERE LOWER(name) = LOWER($1))`, name).
+		Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("event exists by name: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *EventRepository) Create(ctx context.Context, e entity.Event) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO event (id, name, sale_opens_at, status, created_at) VALUES ($1,$2,$3,$4,$5)`,

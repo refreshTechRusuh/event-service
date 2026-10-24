@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/refreshTechRusuh/event-service/internal/event/application/usecase"
@@ -42,6 +43,15 @@ func (m *mockRepo) GetByID(_ context.Context, id string) (entity.Event, error) {
 		return entity.Event{}, apperror.NotFound("event")
 	}
 	return e, nil
+}
+
+func (m *mockRepo) ExistsByName(_ context.Context, name string) (bool, error) {
+	for _, e := range m.events {
+		if strings.EqualFold(e.Name, name) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (m *mockRepo) Create(_ context.Context, e entity.Event) error {
