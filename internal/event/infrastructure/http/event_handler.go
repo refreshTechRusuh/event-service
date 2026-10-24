@@ -25,6 +25,13 @@ type Handler struct{ usecase inbound.IEventUsecase }
 
 // NewWiredHandler mewiring semua dependency (factory).
 func NewWiredHandler(pool *pgxpool.Pool, producer *kafka.Producer) *Handler {
+	h, _ := NewWiredHandlerWithUC(pool, producer)
+	return h
+}
+
+// NewWiredHandlerWithUC mewiring dependency dan mengembalikan Handler + EventUsecase.
+// EventUsecase diekspos agar Kafka consumer bisa memanggil MarkSoldOut.
+func NewWiredHandlerWithUC(pool *pgxpool.Pool, producer *kafka.Producer) (*Handler, *usecase.EventUsecase) {
 	log := slog.Default()
 	repo := db.NewEventRepository(pool, log)
 	var ep *infraevent.KafkaProducer
@@ -32,7 +39,7 @@ func NewWiredHandler(pool *pgxpool.Pool, producer *kafka.Producer) *Handler {
 		ep = infraevent.NewKafkaProducer(producer, slog.Default())
 	}
 	uc := usecase.NewEventUsecase(repo, ep, slog.Default())
-	return &Handler{usecase: uc}
+	return &Handler{usecase: uc}, uc
 }
 
 // RegisterRoutes mendaftarkan semua route event ke mux.

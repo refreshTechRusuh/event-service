@@ -7,18 +7,21 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/refreshTechRusuh/event-service/internal/config"
+	"github.com/refreshTechRusuh/event-service/internal/event/application/usecase"
 	eventhttp "github.com/refreshTechRusuh/event-service/internal/event/infrastructure/http"
 	"github.com/refreshTechRusuh/event-service/pkg/kafka"
 	"github.com/refreshTechRusuh/event-service/pkg/middleware"
 )
 
-func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *kafka.Producer) (http.Handler, func(), error) {
+// New mewiring semua dependency event-service.
+// Mengembalikan handler HTTP, usecase (untuk consumer), dan closeFn.
+func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *kafka.Producer) (http.Handler, *usecase.EventUsecase, func(), error) {
 	mux := http.NewServeMux()
 
-	handler := eventhttp.NewWiredHandler(pool, producer)
+	handler, uc := eventhttp.NewWiredHandlerWithUC(pool, producer)
 	eventhttp.RegisterRoutes(mux, handler, cfg.JWT.AccessTokenSecret)
 
-	// Wrap seluruh mux dengan request logger — catat semua inbound request.
+	// Wrap seluruh mux dengan request logger.
 	logged := middleware.RequestLogger(slog.Default())(mux)
 
 	closeFn := func() {
@@ -27,5 +30,5 @@ func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *ka
 			producer.Close()
 		}
 	}
-	return logged, closeFn, nil
+	return logged, uc, closeFn, nil
 }

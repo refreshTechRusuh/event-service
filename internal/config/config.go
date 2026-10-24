@@ -45,10 +45,11 @@ type JWTConfig struct {
 }
 
 type KafkaConfig struct {
-	Brokers  string
-	Username string
-	Password string
-	TLS      bool
+	Brokers       string
+	Username      string
+	Password      string
+	TLS           bool
+	ConsumerGroup string
 }
 
 func Load() (*Config, error) {
@@ -68,6 +69,7 @@ func Load() (*Config, error) {
 			Brokers: getEnv("KAFKA_BROKERS", "localhost:9092"),
 			Username: getEnv("KAFKA_USERNAME", ""), Password: getEnv("KAFKA_PASSWORD", ""),
 			TLS: getEnvBool("KAFKA_TLS", false),
+			ConsumerGroup: getEnv("KAFKA_CONSUMER_GROUP", "event-service"),
 		},
 	}
 	return cfg, nil

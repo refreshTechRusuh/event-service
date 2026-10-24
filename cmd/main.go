@@ -36,12 +36,18 @@ func main() {
 
 	producer := kafka.NewProducer(cfg.Kafka, slog.Default())
 
-	mux, closeDeps, err := delivery.New(rootCtx, cfg, pool, producer)
+	mux, uc, closeDeps, err := delivery.New(rootCtx, cfg, pool, producer)
 	if err != nil {
 		slog.Error("failed to init server", "err", err)
 		os.Exit(1)
 	}
 	defer closeDeps()
+
+	// Kafka consumer: consume event.sold_out dan update event.status='sold_out'.
+	// Menggantikan HTTP internal call POST /internal/events/{id}/sold-out dari booking-service.
+	soldOutConsumer := kafka.NewSoldOutConsumer(cfg.Kafka, uc, slog.Default())
+	soldOutConsumer.Start(rootCtx)
+	defer soldOutConsumer.Close()
 
 	// handler dari delivery.New sudah di-wrap RequestLogger.
 	// OptionalAuth di-chain agar role tersedia di semua route non-protected.
