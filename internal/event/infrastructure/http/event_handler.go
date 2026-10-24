@@ -13,9 +13,11 @@ import (
 	"github.com/refreshTechRusuh/event-service/internal/event/infrastructure/db"
 	infraevent "github.com/refreshTechRusuh/event-service/internal/event/infrastructure/event"
 	"github.com/refreshTechRusuh/event-service/internal/event/port/inbound"
+	"github.com/refreshTechRusuh/event-service/internal/event/port/outbound"
 	"github.com/refreshTechRusuh/event-service/pkg/apinizer"
 	"github.com/refreshTechRusuh/event-service/pkg/kafka"
 	"github.com/refreshTechRusuh/event-service/pkg/middleware"
+	vk "github.com/valkey-io/valkey-go"
 )
 
 var validate = validator.New()
@@ -24,14 +26,18 @@ var validate = validator.New()
 type Handler struct{ usecase inbound.IEventUsecase }
 
 // NewWiredHandler mewiring semua dependency (factory).
-func NewWiredHandler(pool *pgxpool.Pool, producer *kafka.Producer) *Handler {
+func NewWiredHandler(pool *pgxpool.Pool, producer *kafka.Producer, valkeyClient vk.Client) *Handler {
 	log := slog.Default()
 	repo := db.NewEventRepository(pool, log)
 	var ep *infraevent.KafkaProducer
 	if producer != nil {
-		ep = infraevent.NewKafkaProducer(producer, slog.Default())
+		ep = infraevent.NewKafkaProducer(producer, log)
 	}
-	uc := usecase.NewEventUsecase(repo, ep, slog.Default())
+	var broadcaster outbound.IStockBroadcaster
+	if valkeyClient != nil {
+		broadcaster = infraevent.NewRedisStockBroadcaster(valkeyClient, log)
+	}
+	uc := usecase.NewEventUsecase(repo, ep, broadcaster, log)
 	return &Handler{usecase: uc}
 }
 

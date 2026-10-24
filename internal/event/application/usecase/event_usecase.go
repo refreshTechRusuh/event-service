@@ -13,13 +13,14 @@ import (
 )
 
 type EventUsecase struct {
-	repo     outbound.IEventRepository
-	producer outbound.IEventProducer // opsional — nil bila tidak ada Kafka
-	log      *slog.Logger
+	repo        outbound.IEventRepository
+	producer    outbound.IEventProducer   // opsional — nil bila tidak ada Kafka
+	broadcaster outbound.IStockBroadcaster // opsional — nil bila tidak ada Valkey
+	log         *slog.Logger
 }
 
-func NewEventUsecase(repo outbound.IEventRepository, producer outbound.IEventProducer, log *slog.Logger) *EventUsecase {
-	return &EventUsecase{repo: repo, producer: producer, log: log}
+func NewEventUsecase(repo outbound.IEventRepository, producer outbound.IEventProducer, broadcaster outbound.IStockBroadcaster, log *slog.Logger) *EventUsecase {
+	return &EventUsecase{repo: repo, producer: producer, broadcaster: broadcaster, log: log}
 }
 
 // ---- Public read -----------------------------------------------------------
@@ -226,6 +227,15 @@ func (u *EventUsecase) MarkSoldOut(ctx context.Context, eventID string) error {
 	if u.producer != nil {
 		go u.producer.PublishEventSoldOut(context.WithoutCancel(ctx), eventID,
 			map[string]string{"eventId": eventID})
+	}
+	// Broadcast sold-out ke klien SSE (booking-service) via Redis Pub/Sub.
+	if u.broadcaster != nil {
+		go func(bctx context.Context) {
+			if err := u.broadcaster.BroadcastSoldOut(bctx, eventID); err != nil {
+				u.log.ErrorContext(bctx, "broadcast sold-out to SSE failed",
+					slog.String("eventId", eventID), slog.Any("err", err))
+			}
+		}(context.WithoutCancel(ctx))
 	}
 	u.log.InfoContext(ctx, "event marked sold_out", slog.String("eventId", eventID))
 	return nil

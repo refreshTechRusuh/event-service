@@ -16,6 +16,7 @@ type Config struct {
 	DB  DBConfig
 	JWT JWTConfig
 	Kafka KafkaConfig
+	Valkey ValkeyConfig
 }
 
 type AppConfig struct {
@@ -51,6 +52,14 @@ type KafkaConfig struct {
 	TLS      bool
 }
 
+// ValkeyConfig untuk Redis/Valkey Pub/Sub (broadcast sold-out ke SSE booking-service).
+// Opsional: bila Addr kosong, broadcaster dimatikan (nil) dan MarkSoldOut tetap jalan.
+type ValkeyConfig struct {
+	Addr     string
+	Password string
+	TLS      bool
+}
+
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 	cfg := &Config{
@@ -68,6 +77,11 @@ func Load() (*Config, error) {
 			Brokers: getEnv("KAFKA_BROKERS", "localhost:9092"),
 			Username: getEnv("KAFKA_USERNAME", ""), Password: getEnv("KAFKA_PASSWORD", ""),
 			TLS: getEnvBool("KAFKA_TLS", false),
+		},
+		Valkey: ValkeyConfig{
+			Addr:     getEnv("VALKEY_ADDR", ""),
+			Password: getEnv("VALKEY_PASSWORD", ""),
+			TLS:      getEnvBool("VALKEY_TLS", false),
 		},
 	}
 	return cfg, nil

@@ -122,7 +122,7 @@ func newUC(t *testing.T) (*usecase.EventUsecase, *mockRepo, *mockProducer) {
 	t.Helper()
 	repo := newMockRepo()
 	prod := &mockProducer{}
-	uc := usecase.NewEventUsecase(repo, prod, slog.Default())
+	uc := usecase.NewEventUsecase(repo, prod, nil, slog.Default())
 	return uc, repo, prod
 }
 

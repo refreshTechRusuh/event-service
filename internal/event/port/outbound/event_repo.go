@@ -27,3 +27,11 @@ type IEventProducer interface {
 	// Dikonsumsi Queue Service untuk menutup antrian.
 	PublishEventSoldOut(ctx context.Context, eventID string, payload any) error
 }
+
+// IStockBroadcaster mem-broadcast perubahan stok ke klien SSE lewat Redis/Valkey
+// Pub/Sub channel "stock:{eventId}" — channel yang sama di-subscribe booking-service.
+// Opsional: nil bila Valkey tidak dikonfigurasi (MarkSoldOut tetap jalan tanpa broadcast).
+type IStockBroadcaster interface {
+	// BroadcastSoldOut mengirim frame {eventId, soldOut:true} ke subscriber SSE.
+	BroadcastSoldOut(ctx context.Context, eventID string) error
+}
