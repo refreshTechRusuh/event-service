@@ -25,7 +25,8 @@ type Handler struct{ usecase inbound.IEventUsecase }
 
 // NewWiredHandler mewiring semua dependency (factory).
 func NewWiredHandler(pool *pgxpool.Pool, producer *kafka.Producer) *Handler {
-	repo := db.NewEventRepository(pool)
+	log := slog.Default()
+	repo := db.NewEventRepository(pool, log)
 	var ep *infraevent.KafkaProducer
 	if producer != nil {
 		ep = infraevent.NewKafkaProducer(producer, slog.Default())
