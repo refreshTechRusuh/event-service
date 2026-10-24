@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/joho/godotenv"
+	"github.com/refreshTechRusuh/event-service/pkg/logctx"
 )
 
 type Config struct {
@@ -85,7 +86,8 @@ func SetupLogger(cfg LogConfig) {
 	} else {
 		h = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	}
-	slog.SetDefault(slog.New(h))
+	// Bungkus dengan ContextHandler agar txId dari context otomatis ikut di setiap log.
+	slog.SetDefault(slog.New(logctx.NewContextHandler(h)))
 }
 
 func (d DBConfig) DSN() string {
