@@ -25,10 +25,17 @@ func NewEventUsecase(repo outbound.IEventRepository, producer outbound.IEventPro
 
 // ---- Public read -----------------------------------------------------------
 
-func (u *EventUsecase) ListEvents(ctx context.Context) ([]dto.EventListItem, error) {
-	events, err := u.repo.ListAll(ctx)
+// ListEvents mengembalikan daftar event ter-paginate beserta info meta.
+// page 1-based, size di-clamp ke rentang aman di handler sebelum sampai sini.
+func (u *EventUsecase) ListEvents(ctx context.Context, page, size int) ([]dto.EventListItem, dto.PageMeta, error) {
+	total, err := u.repo.CountAll(ctx)
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, dto.PageMeta{}, apperror.Internal(err)
+	}
+	offset := (page - 1) * size
+	events, err := u.repo.ListPaged(ctx, size, offset)
+	if err != nil {
+		return nil, dto.PageMeta{}, apperror.Internal(err)
 	}
 	result := make([]dto.EventListItem, 0, len(events))
 	for _, e := range events {
@@ -38,7 +45,12 @@ func (u *EventUsecase) ListEvents(ctx context.Context) ([]dto.EventListItem, err
 		}
 		result = append(result, item)
 	}
-	return result, nil
+	totalPages := 0
+	if size > 0 {
+		totalPages = (total + size - 1) / size // ceil
+	}
+	meta := dto.PageMeta{Page: page, Size: size, TotalItems: total, TotalPages: totalPages}
+	return result, meta, nil
 }
 
 func (u *EventUsecase) GetEventDetail(ctx context.Context, eventID string) (dto.EventDetail, error) {
@@ -61,10 +73,15 @@ func (u *EventUsecase) GetEventDetail(ctx context.Context, eventID string) (dto.
 
 // ---- Admin -----------------------------------------------------------------
 
-func (u *EventUsecase) AdminListEvents(ctx context.Context) ([]dto.AdminEventListItem, error) {
-	events, err := u.repo.ListAll(ctx)
+func (u *EventUsecase) AdminListEvents(ctx context.Context, page, size int) ([]dto.AdminEventListItem, dto.PageMeta, error) {
+	total, err := u.repo.CountAll(ctx)
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, dto.PageMeta{}, apperror.Internal(err)
+	}
+	offset := (page - 1) * size
+	events, err := u.repo.ListPaged(ctx, size, offset)
+	if err != nil {
+		return nil, dto.PageMeta{}, apperror.Internal(err)
 	}
 	result := make([]dto.AdminEventListItem, 0, len(events))
 	for _, e := range events {
@@ -80,7 +97,12 @@ func (u *EventUsecase) AdminListEvents(ctx context.Context) ([]dto.AdminEventLis
 			ID: e.ID, Name: e.Name, Status: string(e.Status), Categories: catDTOs,
 		})
 	}
-	return result, nil
+	totalPages := 0
+	if size > 0 {
+		totalPages = (total + size - 1) / size // ceil
+	}
+	meta := dto.PageMeta{Page: page, Size: size, TotalItems: total, TotalPages: totalPages}
+	return result, meta, nil
 }
 
 func (u *EventUsecase) CreateEvent(ctx context.Context, req dto.CreateEventRequest) (dto.AdminEventListItem, error) {

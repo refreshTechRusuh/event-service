@@ -37,6 +37,25 @@ func (m *mockRepo) ListAll(_ context.Context) ([]entity.Event, error) {
 	return result, nil
 }
 
+func (m *mockRepo) ListPaged(_ context.Context, limit, offset int) ([]entity.Event, error) {
+	all := make([]entity.Event, 0)
+	for _, e := range m.events {
+		all = append(all, e)
+	}
+	if offset >= len(all) {
+		return []entity.Event{}, nil
+	}
+	end := offset + limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return all[offset:end], nil
+}
+
+func (m *mockRepo) CountAll(_ context.Context) (int, error) {
+	return len(m.events), nil
+}
+
 func (m *mockRepo) GetByID(_ context.Context, id string) (entity.Event, error) {
 	e, ok := m.events[id]
 	if !ok {

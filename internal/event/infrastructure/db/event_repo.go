@@ -58,6 +58,8 @@ func NewEventRepository(pool *pgxpool.Pool, log *slog.Logger) *EventRepository {
 
 const (
 	sqlEventListAll      = `SELECT id, name, sale_opens_at, status, created_at FROM event ORDER BY created_at DESC`
+	sqlEventListPaged    = `SELECT id, name, sale_opens_at, status, created_at FROM event ORDER BY created_at DESC LIMIT $1 OFFSET $2`
+	sqlEventCountAll     = `SELECT COUNT(*) FROM event`
 	sqlEventGetByID      = `SELECT id, name, sale_opens_at, status, created_at FROM event WHERE id = $1`
 	sqlEventExistsByName = `SELECT EXISTS(SELECT 1 FROM event WHERE LOWER(name) = LOWER($1))`
 	sqlEventInsert       = `INSERT INTO event (id, name, sale_opens_at, status, created_at) VALUES ($1,$2,$3,$4,$5)`
@@ -88,6 +90,39 @@ func (r *EventRepository) ListAll(ctx context.Context) ([]entity.Event, error) {
 	}
 	dbLog(ctx, r.log, "event.list_all", sqlEventListAll, start, nil, slog.Int("count", len(result)))
 	return result, nil
+}
+
+func (r *EventRepository) ListPaged(ctx context.Context, limit, offset int) ([]entity.Event, error) {
+	start := time.Now()
+	rows, err := r.pool.Query(ctx, sqlEventListPaged, limit, offset)
+	if err != nil {
+		dbLog(ctx, r.log, "event.list_paged", sqlEventListPaged, start, err,
+			slog.Int("limit", limit), slog.Int("offset", offset))
+		return nil, fmt.Errorf("event list paged: %w", err)
+	}
+	defer rows.Close()
+	var result []entity.Event
+	for rows.Next() {
+		var e entity.Event
+		if err := rows.Scan(&e.ID, &e.Name, &e.SaleOpensAt, &e.Status, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, e)
+	}
+	dbLog(ctx, r.log, "event.list_paged", sqlEventListPaged, start, nil,
+		slog.Int("limit", limit), slog.Int("offset", offset), slog.Int("count", len(result)))
+	return result, nil
+}
+
+func (r *EventRepository) CountAll(ctx context.Context) (int, error) {
+	start := time.Now()
+	var total int
+	if err := r.pool.QueryRow(ctx, sqlEventCountAll).Scan(&total); err != nil {
+		dbLog(ctx, r.log, "event.count_all", sqlEventCountAll, start, err)
+		return 0, fmt.Errorf("event count: %w", err)
+	}
+	dbLog(ctx, r.log, "event.count_all", sqlEventCountAll, start, nil, slog.Int("total", total))
+	return total, nil
 }
 
 func (r *EventRepository) GetByID(ctx context.Context, id string) (entity.Event, error) {

@@ -21,9 +21,13 @@ import (
 
 func TestListEvents_Empty(t *testing.T) {
 	uc, _, _ := newUC(t)
-	result, err := uc.ListEvents(context.Background())
+	result, meta, err := uc.ListEvents(context.Background(), 1, 10)
 	require.NoError(t, err)
 	assert.Empty(t, result, "daftar kosong bila tidak ada event")
+	assert.Equal(t, 0, meta.TotalItems)
+	assert.Equal(t, 0, meta.TotalPages)
+	assert.Equal(t, 1, meta.Page)
+	assert.Equal(t, 10, meta.Size)
 }
 
 func TestListEvents_ReturnsAllEvents(t *testing.T) {
@@ -31,9 +35,11 @@ func TestListEvents_ReturnsAllEvents(t *testing.T) {
 	repo.events["evt-1"] = entity.Event{ID: "evt-1", Name: "Konser A", Status: "on_sale"}
 	repo.events["evt-2"] = entity.Event{ID: "evt-2", Name: "Festival B", Status: "sold_out"}
 
-	result, err := uc.ListEvents(context.Background())
+	result, meta, err := uc.ListEvents(context.Background(), 1, 10)
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
+	assert.Equal(t, 2, meta.TotalItems)
+	assert.Equal(t, 1, meta.TotalPages)
 
 	names := make(map[string]string)
 	for _, r := range result {
@@ -53,11 +59,40 @@ func TestListEvents_SaleOpensAt_Formatted(t *testing.T) {
 		SaleOpensAt: &saleOpensAt,
 	}
 
-	result, err := uc.ListEvents(context.Background())
+	result, _, err := uc.ListEvents(context.Background(), 1, 10)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	assert.Equal(t, "2026-12-20T19:00:00Z", result[0].SaleOpensAt,
 		"SaleOpensAt harus di-format sebagai RFC3339 UTC")
+}
+
+func TestListEvents_Pagination(t *testing.T) {
+	uc, repo, _ := newUC(t)
+	for i := 0; i < 5; i++ {
+		id := "evt-" + string(rune('a'+i))
+		repo.events[id] = entity.Event{ID: id, Name: "Event " + id, Status: "on_sale"}
+	}
+
+	// size=2 → 3 halaman (ceil(5/2)); halaman 1 & 2 berisi 2 item, halaman 3 berisi 1.
+	page1, meta1, err := uc.ListEvents(context.Background(), 1, 2)
+	require.NoError(t, err)
+	assert.Len(t, page1, 2)
+	assert.Equal(t, 5, meta1.TotalItems)
+	assert.Equal(t, 3, meta1.TotalPages)
+	assert.Equal(t, 1, meta1.Page)
+	assert.Equal(t, 2, meta1.Size)
+
+	page3, meta3, err := uc.ListEvents(context.Background(), 3, 2)
+	require.NoError(t, err)
+	assert.Len(t, page3, 1, "halaman terakhir berisi sisa 1 item")
+	assert.Equal(t, 3, meta3.Page)
+
+	// Halaman di luar rentang → kosong, meta tetap konsisten.
+	pageOver, metaOver, err := uc.ListEvents(context.Background(), 99, 2)
+	require.NoError(t, err)
+	assert.Empty(t, pageOver)
+	assert.Equal(t, 5, metaOver.TotalItems)
+	assert.Equal(t, 3, metaOver.TotalPages)
 }
 
 // ============================================================
@@ -125,7 +160,7 @@ func TestAdminListEvents_IncludesCapacity(t *testing.T) {
 		Price: 500000, Available: 37, Capacity: 100,
 	}
 
-	result, err := uc.AdminListEvents(context.Background())
+	result, _, err := uc.AdminListEvents(context.Background(), 1, 10)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	require.Len(t, result[0].Categories, 1)
@@ -141,9 +176,11 @@ func TestAdminListEvents_MultipleEvents(t *testing.T) {
 	repo.events["evt-1"] = entity.Event{ID: "evt-1", Name: "Konser A", Status: "on_sale"}
 	repo.events["evt-2"] = entity.Event{ID: "evt-2", Name: "Festival B", Status: "sold_out"}
 
-	result, err := uc.AdminListEvents(context.Background())
+	result, meta, err := uc.AdminListEvents(context.Background(), 1, 10)
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
+	assert.Equal(t, 2, meta.TotalItems)
+	assert.Equal(t, 1, meta.TotalPages)
 }
 
 // ============================================================

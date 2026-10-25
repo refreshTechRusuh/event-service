@@ -9,6 +9,8 @@ import (
 // IEventRepository mengelola persistensi event dan ticket_category.
 type IEventRepository interface {
 	ListAll(ctx context.Context) ([]entity.Event, error)
+	ListPaged(ctx context.Context, limit, offset int) ([]entity.Event, error) // pagination untuk GET /events
+	CountAll(ctx context.Context) (int, error)                                // total event untuk meta pagination
 	GetByID(ctx context.Context, id string) (entity.Event, error)
 	ExistsByName(ctx context.Context, name string) (bool, error) // uniqueness check
 	Create(ctx context.Context, e entity.Event) error

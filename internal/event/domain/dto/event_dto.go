@@ -9,6 +9,14 @@ type EventListItem struct {
 	SaleOpensAt string `json:"saleOpensAt,omitempty"`
 }
 
+// PageMeta adalah info pagination yang dikirim di field "meta" response list.
+type PageMeta struct {
+	Page       int `json:"page"`       // halaman saat ini (1-based)
+	Size       int `json:"size"`       // jumlah item per halaman
+	TotalItems int `json:"totalItems"` // total seluruh item (lintas halaman)
+	TotalPages int `json:"totalPages"` // total halaman = ceil(totalItems/size)
+}
+
 type CategoryDTO struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`

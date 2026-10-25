@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -75,12 +76,13 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, accessTokenSecret string) {
 // ---- Handlers ---------------------------------------------------------------
 
 func (h *Handler) ListEvents(w http.ResponseWriter, r *http.Request) {
-	result, err := h.usecase.ListEvents(r.Context())
+	page, size := parsePageSize(r)
+	result, meta, err := h.usecase.ListEvents(r.Context(), page, size)
 	if err != nil {
 		apinizer.WriteError(w, err)
 		return
 	}
-	apinizer.Success(w, "OK", result)
+	apinizer.SuccessWithMeta(w, "OK", result, meta)
 }
 
 func (h *Handler) GetEventDetail(w http.ResponseWriter, r *http.Request) {
@@ -93,12 +95,13 @@ func (h *Handler) GetEventDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AdminListEvents(w http.ResponseWriter, r *http.Request) {
-	result, err := h.usecase.AdminListEvents(r.Context())
+	page, size := parsePageSize(r)
+	result, meta, err := h.usecase.AdminListEvents(r.Context(), page, size)
 	if err != nil {
 		apinizer.WriteError(w, err)
 		return
 	}
-	apinizer.Success(w, "OK", result)
+	apinizer.SuccessWithMeta(w, "OK", result, meta)
 }
 
 func (h *Handler) CreateEvent(w http.ResponseWriter, r *http.Request) {
@@ -180,4 +183,30 @@ func (h *Handler) MarkSoldOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apinizer.Success(w, "Event ditandai sold out", map[string]bool{"ok": true})
+}
+
+// parsePageSize membaca query param ?page & ?size untuk endpoint list.
+// Default page=1, size=10. Nilai invalid/di luar rentang di-clamp:
+// page minimal 1, size dibatasi 1..100 agar tidak membebani DB.
+func parsePageSize(r *http.Request) (page, size int) {
+	const (
+		defaultPage = 1
+		defaultSize = 10
+		maxSize     = 100
+	)
+	page, size = defaultPage, defaultSize
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			page = n
+		}
+	}
+	if v := r.URL.Query().Get("size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			if n > maxSize {
+				n = maxSize
+			}
+			size = n
+		}
+	}
+	return page, size
 }
