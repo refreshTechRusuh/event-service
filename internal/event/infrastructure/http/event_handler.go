@@ -48,7 +48,7 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, accessTokenSecret string) {
 		return middleware.Chain(http.HandlerFunc(next), middleware.RequireAccessToken(accessTokenSecret))
 	}
 	requireAdmin := func(next http.HandlerFunc) http.Handler {
-		return middleware.Chain(http.HandlerFunc(next), middleware.RequireRole("admin"))
+		return middleware.Chain(http.HandlerFunc(next), middleware.OptionalAuth(accessTokenSecret), middleware.RequireRole("admin"))
 	}
 
 	// Public
