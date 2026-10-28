@@ -52,19 +52,19 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, accessTokenSecret string) {
 	}
 
 	// Public
-	mux.HandleFunc("GET /api/v1/events", h.ListEvents)
-	mux.Handle("GET /api/v1/events/{eventId}", withAccessToken(h.GetEventDetail))
+	mux.HandleFunc("GET /api/event/v1/list", h.ListEvents)
+	mux.Handle("GET /api/event/v1/detail/{eventId}", withAccessToken(h.GetEventDetail))
 
 	// Admin
-	mux.Handle("GET /api/v1/admin/events", requireAdmin(h.AdminListEvents))
-	mux.Handle("POST /api/v1/admin/events", requireAdmin(h.CreateEvent))
-	mux.Handle("PUT /api/v1/admin/events/{eventId}", requireAdmin(h.UpdateEvent))
-	mux.Handle("DELETE /api/v1/admin/events/{eventId}", requireAdmin(h.DeleteEvent))
-	mux.Handle("POST /api/v1/admin/events/{eventId}/categories", requireAdmin(h.CreateCategory))
-	mux.Handle("PUT /api/v1/admin/categories/{categoryId}", requireAdmin(h.UpdateCategory))
+	mux.Handle("GET /api/event/v1/admin/list-event", requireAdmin(h.AdminListEvents))
+	mux.Handle("POST /api/event/v1/admin/create-event", requireAdmin(h.CreateEvent))
+	mux.Handle("PUT /api/event/v1/admin/update-event/{eventId}", requireAdmin(h.UpdateEvent))
+	mux.Handle("DELETE /api/event/v1/admin/delete-event/{eventId}", requireAdmin(h.DeleteEvent))
+	mux.Handle("POST /api/event/v1/admin/{eventId}/create-category", requireAdmin(h.CreateCategory))
+	mux.Handle("PUT /api/event/v1/admin/{categoryId}/update-category", requireAdmin(h.UpdateCategory))
 
 	// Internal (dipanggil booking-service saat sold-out terdeteksi — tidak perlu auth publik)
-	mux.HandleFunc("POST /internal/events/{eventId}/sold-out", h.MarkSoldOut)
+	mux.HandleFunc("POST /internal/event/v1/{eventId}/sold-out", h.MarkSoldOut)
 
 	// Health
 	mux.HandleFunc("GET /sys/ping", func(w http.ResponseWriter, r *http.Request) {
