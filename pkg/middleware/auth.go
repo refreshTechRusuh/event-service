@@ -33,6 +33,7 @@ func OptionalAuth(secret string) func(http.Handler) http.Handler {
 						}
 						return secret
 					}()),
+					slog.String("DEBUG_REMOVE_secret", secret), // TODO: HAPUS SETELAH DEBUG
 				)
 				if userID, role, ok := parseUserJWT(token, secret); ok {
 					r = r.WithContext(context.WithValue(r.Context(), ctxUserID, userID))
