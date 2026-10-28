@@ -13,21 +13,29 @@ import (
 )
 
 type EventUsecase struct {
-	repo     outbound.IEventRepository
-	producer outbound.IEventProducer // opsional — nil bila tidak ada Kafka
-	log      *slog.Logger
+	repo        outbound.IEventRepository
+	producer    outbound.IEventProducer   // opsional — nil bila tidak ada Kafka
+	broadcaster outbound.IStockBroadcaster // opsional — nil bila tidak ada Valkey
+	log         *slog.Logger
 }
 
-func NewEventUsecase(repo outbound.IEventRepository, producer outbound.IEventProducer, log *slog.Logger) *EventUsecase {
-	return &EventUsecase{repo: repo, producer: producer, log: log}
+func NewEventUsecase(repo outbound.IEventRepository, producer outbound.IEventProducer, broadcaster outbound.IStockBroadcaster, log *slog.Logger) *EventUsecase {
+	return &EventUsecase{repo: repo, producer: producer, broadcaster: broadcaster, log: log}
 }
 
 // ---- Public read -----------------------------------------------------------
 
-func (u *EventUsecase) ListEvents(ctx context.Context) ([]dto.EventListItem, error) {
-	events, err := u.repo.ListAll(ctx)
+// ListEvents mengembalikan daftar event ter-paginate beserta info meta.
+// page 1-based, size di-clamp ke rentang aman di handler sebelum sampai sini.
+func (u *EventUsecase) ListEvents(ctx context.Context, page, size int) ([]dto.EventListItem, dto.PageMeta, error) {
+	total, err := u.repo.CountAll(ctx)
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, dto.PageMeta{}, apperror.Internal(err)
+	}
+	offset := (page - 1) * size
+	events, err := u.repo.ListPaged(ctx, size, offset)
+	if err != nil {
+		return nil, dto.PageMeta{}, apperror.Internal(err)
 	}
 	result := make([]dto.EventListItem, 0, len(events))
 	for _, e := range events {
@@ -37,7 +45,12 @@ func (u *EventUsecase) ListEvents(ctx context.Context) ([]dto.EventListItem, err
 		}
 		result = append(result, item)
 	}
-	return result, nil
+	totalPages := 0
+	if size > 0 {
+		totalPages = (total + size - 1) / size // ceil
+	}
+	meta := dto.PageMeta{Page: page, Size: size, TotalItems: total, TotalPages: totalPages}
+	return result, meta, nil
 }
 
 func (u *EventUsecase) GetEventDetail(ctx context.Context, eventID string) (dto.EventDetail, error) {
@@ -60,10 +73,15 @@ func (u *EventUsecase) GetEventDetail(ctx context.Context, eventID string) (dto.
 
 // ---- Admin -----------------------------------------------------------------
 
-func (u *EventUsecase) AdminListEvents(ctx context.Context) ([]dto.AdminEventListItem, error) {
-	events, err := u.repo.ListAll(ctx)
+func (u *EventUsecase) AdminListEvents(ctx context.Context, page, size int) ([]dto.AdminEventListItem, dto.PageMeta, error) {
+	total, err := u.repo.CountAll(ctx)
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, dto.PageMeta{}, apperror.Internal(err)
+	}
+	offset := (page - 1) * size
+	events, err := u.repo.ListPaged(ctx, size, offset)
+	if err != nil {
+		return nil, dto.PageMeta{}, apperror.Internal(err)
 	}
 	result := make([]dto.AdminEventListItem, 0, len(events))
 	for _, e := range events {
@@ -79,13 +97,26 @@ func (u *EventUsecase) AdminListEvents(ctx context.Context) ([]dto.AdminEventLis
 			ID: e.ID, Name: e.Name, Status: string(e.Status), Categories: catDTOs,
 		})
 	}
-	return result, nil
+	totalPages := 0
+	if size > 0 {
+		totalPages = (total + size - 1) / size // ceil
+	}
+	meta := dto.PageMeta{Page: page, Size: size, TotalItems: total, TotalPages: totalPages}
+	return result, meta, nil
 }
 
 func (u *EventUsecase) CreateEvent(ctx context.Context, req dto.CreateEventRequest) (dto.AdminEventListItem, error) {
 	status := req.Status
 	if status == "" {
 		status = "draft" // default sesuai openapi.yaml AdminCreateEventRequest
+	}
+	// Uniqueness check: tolak nama yang sudah ada (case-insensitive)
+	exists, err := u.repo.ExistsByName(ctx, req.Name)
+	if err != nil {
+		return dto.AdminEventListItem{}, apperror.Internal(err)
+	}
+	if exists {
+		return dto.AdminEventListItem{}, apperror.DuplicateEvent(req.Name)
 	}
 	e := entity.Event{
 		ID:        uuid.New().String(),
@@ -218,6 +249,15 @@ func (u *EventUsecase) MarkSoldOut(ctx context.Context, eventID string) error {
 	if u.producer != nil {
 		go u.producer.PublishEventSoldOut(context.WithoutCancel(ctx), eventID,
 			map[string]string{"eventId": eventID})
+	}
+	// Broadcast sold-out ke klien SSE (booking-service) via Redis Pub/Sub.
+	if u.broadcaster != nil {
+		go func(bctx context.Context) {
+			if err := u.broadcaster.BroadcastSoldOut(bctx, eventID); err != nil {
+				u.log.ErrorContext(bctx, "broadcast sold-out to SSE failed",
+					slog.String("eventId", eventID), slog.Any("err", err))
+			}
+		}(context.WithoutCancel(ctx))
 	}
 	u.log.InfoContext(ctx, "event marked sold_out", slog.String("eventId", eventID))
 	return nil

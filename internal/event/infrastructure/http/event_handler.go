@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,9 +14,11 @@ import (
 	"github.com/refreshTechRusuh/event-service/internal/event/infrastructure/db"
 	infraevent "github.com/refreshTechRusuh/event-service/internal/event/infrastructure/event"
 	"github.com/refreshTechRusuh/event-service/internal/event/port/inbound"
+	"github.com/refreshTechRusuh/event-service/internal/event/port/outbound"
 	"github.com/refreshTechRusuh/event-service/pkg/apinizer"
 	"github.com/refreshTechRusuh/event-service/pkg/kafka"
 	"github.com/refreshTechRusuh/event-service/pkg/middleware"
+	vk "github.com/valkey-io/valkey-go"
 )
 
 var validate = validator.New()
@@ -24,13 +27,18 @@ var validate = validator.New()
 type Handler struct{ usecase inbound.IEventUsecase }
 
 // NewWiredHandler mewiring semua dependency (factory).
-func NewWiredHandler(pool *pgxpool.Pool, producer *kafka.Producer) *Handler {
-	repo := db.NewEventRepository(pool)
+func NewWiredHandler(pool *pgxpool.Pool, producer *kafka.Producer, valkeyClient vk.Client) *Handler {
+	log := slog.Default()
+	repo := db.NewEventRepository(pool, log)
 	var ep *infraevent.KafkaProducer
 	if producer != nil {
-		ep = infraevent.NewKafkaProducer(producer, slog.Default())
+		ep = infraevent.NewKafkaProducer(producer, log)
 	}
-	uc := usecase.NewEventUsecase(repo, ep, slog.Default())
+	var broadcaster outbound.IStockBroadcaster
+	if valkeyClient != nil {
+		broadcaster = infraevent.NewRedisStockBroadcaster(valkeyClient, log)
+	}
+	uc := usecase.NewEventUsecase(repo, ep, broadcaster, log)
 	return &Handler{usecase: uc}
 }
 
@@ -44,19 +52,19 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, accessTokenSecret string) {
 	}
 
 	// Public
-	mux.HandleFunc("GET /api/v1/events", h.ListEvents)
-	mux.Handle("GET /api/v1/events/{eventId}", withAccessToken(h.GetEventDetail))
+	mux.HandleFunc("GET /api/event/v1/list", h.ListEvents)
+	mux.Handle("GET /api/event/v1/detail/{eventId}", withAccessToken(h.GetEventDetail))
 
 	// Admin
-	mux.Handle("GET /api/v1/admin/events", requireAdmin(h.AdminListEvents))
-	mux.Handle("POST /api/v1/admin/events", requireAdmin(h.CreateEvent))
-	mux.Handle("PUT /api/v1/admin/events/{eventId}", requireAdmin(h.UpdateEvent))
-	mux.Handle("DELETE /api/v1/admin/events/{eventId}", requireAdmin(h.DeleteEvent))
-	mux.Handle("POST /api/v1/admin/events/{eventId}/categories", requireAdmin(h.CreateCategory))
-	mux.Handle("PUT /api/v1/admin/categories/{categoryId}", requireAdmin(h.UpdateCategory))
+	mux.Handle("GET /api/event/v1/admin/list-event", requireAdmin(h.AdminListEvents))
+	mux.Handle("POST /api/event/v1/admin/create-event", requireAdmin(h.CreateEvent))
+	mux.Handle("PUT /api/event/v1/admin/update-event/{eventId}", requireAdmin(h.UpdateEvent))
+	mux.Handle("DELETE /api/event/v1/admin/delete-event/{eventId}", requireAdmin(h.DeleteEvent))
+	mux.Handle("POST /api/event/v1/admin/{eventId}/create-category", requireAdmin(h.CreateCategory))
+	mux.Handle("PUT /api/event/v1/admin/{categoryId}/update-category", requireAdmin(h.UpdateCategory))
 
 	// Internal (dipanggil booking-service saat sold-out terdeteksi — tidak perlu auth publik)
-	mux.HandleFunc("POST /internal/events/{eventId}/sold-out", h.MarkSoldOut)
+	mux.HandleFunc("POST /internal/event/v1/{eventId}/sold-out", h.MarkSoldOut)
 
 	// Health
 	mux.HandleFunc("GET /sys/ping", func(w http.ResponseWriter, r *http.Request) {
@@ -68,12 +76,13 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, accessTokenSecret string) {
 // ---- Handlers ---------------------------------------------------------------
 
 func (h *Handler) ListEvents(w http.ResponseWriter, r *http.Request) {
-	result, err := h.usecase.ListEvents(r.Context())
+	page, size := parsePageSize(r)
+	result, meta, err := h.usecase.ListEvents(r.Context(), page, size)
 	if err != nil {
 		apinizer.WriteError(w, err)
 		return
 	}
-	apinizer.Success(w, "OK", result)
+	apinizer.SuccessWithMeta(w, "OK", result, meta)
 }
 
 func (h *Handler) GetEventDetail(w http.ResponseWriter, r *http.Request) {
@@ -86,12 +95,13 @@ func (h *Handler) GetEventDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AdminListEvents(w http.ResponseWriter, r *http.Request) {
-	result, err := h.usecase.AdminListEvents(r.Context())
+	page, size := parsePageSize(r)
+	result, meta, err := h.usecase.AdminListEvents(r.Context(), page, size)
 	if err != nil {
 		apinizer.WriteError(w, err)
 		return
 	}
-	apinizer.Success(w, "OK", result)
+	apinizer.SuccessWithMeta(w, "OK", result, meta)
 }
 
 func (h *Handler) CreateEvent(w http.ResponseWriter, r *http.Request) {
@@ -173,4 +183,30 @@ func (h *Handler) MarkSoldOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apinizer.Success(w, "Event ditandai sold out", map[string]bool{"ok": true})
+}
+
+// parsePageSize membaca query param ?page & ?size untuk endpoint list.
+// Default page=1, size=10. Nilai invalid/di luar rentang di-clamp:
+// page minimal 1, size dibatasi 1..100 agar tidak membebani DB.
+func parsePageSize(r *http.Request) (page, size int) {
+	const (
+		defaultPage = 1
+		defaultSize = 10
+		maxSize     = 100
+	)
+	page, size = defaultPage, defaultSize
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			page = n
+		}
+	}
+	if v := r.URL.Query().Get("size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			if n > maxSize {
+				n = maxSize
+			}
+			size = n
+		}
+	}
+	return page, size
 }

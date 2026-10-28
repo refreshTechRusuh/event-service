@@ -15,6 +15,8 @@ import (
 	pkgdb "github.com/refreshTechRusuh/event-service/pkg/db"
 	"github.com/refreshTechRusuh/event-service/pkg/kafka"
 	"github.com/refreshTechRusuh/event-service/pkg/middleware"
+	pkgvalkey "github.com/refreshTechRusuh/event-service/pkg/valkey"
+	vk "github.com/valkey-io/valkey-go"
 )
 
 func main() {
@@ -36,7 +38,20 @@ func main() {
 
 	producer := kafka.NewProducer(cfg.Kafka, slog.Default())
 
-	mux, closeDeps, err := delivery.New(rootCtx, cfg, pool, producer)
+	// Valkey/Redis client (opsional): dipakai untuk broadcast sold-out ke SSE
+	// booking-service. Bila VALKEY_ADDR kosong, broadcaster dimatikan.
+	var valkeyClient vk.Client
+	if cfg.Valkey.Addr != "" {
+		valkeyClient, err = pkgvalkey.NewClient(cfg.Valkey)
+		if err != nil {
+			slog.Error("failed to connect to valkey", "err", err)
+			os.Exit(1)
+		}
+	} else {
+		slog.Warn("VALKEY_ADDR not set — sold-out SSE broadcast disabled")
+	}
+
+	mux, closeDeps, err := delivery.New(rootCtx, cfg, pool, producer, valkeyClient)
 	if err != nil {
 		slog.Error("failed to init server", "err", err)
 		os.Exit(1)

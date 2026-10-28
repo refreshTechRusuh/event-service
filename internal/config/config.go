@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/joho/godotenv"
+	"github.com/refreshTechRusuh/event-service/pkg/logctx"
 )
 
 type Config struct {
@@ -15,6 +16,7 @@ type Config struct {
 	DB  DBConfig
 	JWT JWTConfig
 	Kafka KafkaConfig
+	Valkey ValkeyConfig
 }
 
 type AppConfig struct {
@@ -50,6 +52,14 @@ type KafkaConfig struct {
 	TLS      bool
 }
 
+// ValkeyConfig untuk Redis/Valkey Pub/Sub (broadcast sold-out ke SSE booking-service).
+// Opsional: bila Addr kosong, broadcaster dimatikan (nil) dan MarkSoldOut tetap jalan.
+type ValkeyConfig struct {
+	Addr     string
+	Password string
+	TLS      bool
+}
+
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 	cfg := &Config{
@@ -68,6 +78,11 @@ func Load() (*Config, error) {
 			Username: getEnv("KAFKA_USERNAME", ""), Password: getEnv("KAFKA_PASSWORD", ""),
 			TLS: getEnvBool("KAFKA_TLS", false),
 		},
+		Valkey: ValkeyConfig{
+			Addr:     getEnv("VALKEY_ADDR", ""),
+			Password: getEnv("VALKEY_PASSWORD", ""),
+			TLS:      getEnvBool("VALKEY_TLS", false),
+		},
 	}
 	return cfg, nil
 }
@@ -85,7 +100,8 @@ func SetupLogger(cfg LogConfig) {
 	} else {
 		h = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	}
-	slog.SetDefault(slog.New(h))
+	// Bungkus dengan ContextHandler agar txId dari context otomatis ikut di setiap log.
+	slog.SetDefault(slog.New(logctx.NewContextHandler(h)))
 }
 
 func (d DBConfig) DSN() string {

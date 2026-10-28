@@ -17,12 +17,19 @@ type Envelope struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
 	Data    any    `json:"data"`
+	Meta    any    `json:"meta,omitempty"`
 	Partial bool   `json:"partial,omitempty"`
 }
 
 // Success menulis response 200 OK dengan payload data.
 func Success(w http.ResponseWriter, message string, data any) {
 	writeJSON(w, http.StatusOK, Envelope{Status: "00000", Message: message, Data: data})
+}
+
+// SuccessWithMeta menulis response 200 OK dengan payload data + info meta
+// (mis. pagination untuk endpoint list).
+func SuccessWithMeta(w http.ResponseWriter, message string, data, meta any) {
+	writeJSON(w, http.StatusOK, Envelope{Status: "00000", Message: message, Data: data, Meta: meta})
 }
 
 // Created menulis response 200 OK (sesuai openapi.yaml POST /bookings = 200).
@@ -65,7 +72,7 @@ func mapErrorCode(code apperror.ErrorCode, msg string) (int, string) {
 	case apperror.ErrNotFound:
 		return http.StatusNotFound, msg
 	case apperror.ErrStockUnavailable, apperror.ErrQuotaExceeded, apperror.ErrQueueDuplicate,
-		apperror.ErrMethodTimeInsufficient:
+		apperror.ErrDuplicateEvent, apperror.ErrMethodTimeInsufficient:
 		return http.StatusConflict, msg
 	case apperror.ErrTokenExpired, apperror.ErrBookingExpired, apperror.ErrSoldOut:
 		return http.StatusGone, msg

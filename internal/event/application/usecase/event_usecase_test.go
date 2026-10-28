@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/refreshTechRusuh/event-service/internal/event/application/usecase"
@@ -36,12 +37,40 @@ func (m *mockRepo) ListAll(_ context.Context) ([]entity.Event, error) {
 	return result, nil
 }
 
+func (m *mockRepo) ListPaged(_ context.Context, limit, offset int) ([]entity.Event, error) {
+	all := make([]entity.Event, 0)
+	for _, e := range m.events {
+		all = append(all, e)
+	}
+	if offset >= len(all) {
+		return []entity.Event{}, nil
+	}
+	end := offset + limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return all[offset:end], nil
+}
+
+func (m *mockRepo) CountAll(_ context.Context) (int, error) {
+	return len(m.events), nil
+}
+
 func (m *mockRepo) GetByID(_ context.Context, id string) (entity.Event, error) {
 	e, ok := m.events[id]
 	if !ok {
 		return entity.Event{}, apperror.NotFound("event")
 	}
 	return e, nil
+}
+
+func (m *mockRepo) ExistsByName(_ context.Context, name string) (bool, error) {
+	for _, e := range m.events {
+		if strings.EqualFold(e.Name, name) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (m *mockRepo) Create(_ context.Context, e entity.Event) error {
@@ -112,7 +141,7 @@ func newUC(t *testing.T) (*usecase.EventUsecase, *mockRepo, *mockProducer) {
 	t.Helper()
 	repo := newMockRepo()
 	prod := &mockProducer{}
-	uc := usecase.NewEventUsecase(repo, prod, slog.Default())
+	uc := usecase.NewEventUsecase(repo, prod, nil, slog.Default())
 	return uc, repo, prod
 }
 
