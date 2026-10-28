@@ -61,7 +61,7 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, accessTokenSecret string) {
 	mux.Handle("PUT /api/event/v1/admin/update-event/{eventId}", requireAdmin(h.UpdateEvent))
 	mux.Handle("DELETE /api/event/v1/admin/delete-event/{eventId}", requireAdmin(h.DeleteEvent))
 	mux.Handle("POST /api/event/v1/admin/{eventId}/create-category", requireAdmin(h.CreateCategory))
-	mux.Handle("PUT /api/event/v1/admin/{categoryId}/update-category", requireAdmin(h.UpdateCategory))
+	mux.Handle("PUT /api/event/v1/admin/category/{categoryId}/update-category", requireAdmin(h.UpdateCategory))
 
 	// Internal (dipanggil booking-service saat sold-out terdeteksi — tidak perlu auth publik)
 	mux.HandleFunc("POST /internal/event/v1/{eventId}/sold-out", h.MarkSoldOut)
