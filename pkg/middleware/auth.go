@@ -20,6 +20,20 @@ func OptionalAuth(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if token := extractBearer(r); token != "" {
+				tokenPreview := token
+				if len(token) > 20 {
+					tokenPreview = token[:20] + "..."
+				}
+				slog.InfoContext(r.Context(), "OptionalAuth: mencoba parse JWT",
+					slog.String("token_prefix", tokenPreview),
+					slog.Int("secret_len", len(secret)),
+					slog.String("secret_prefix", func() string {
+						if len(secret) > 8 {
+							return secret[:8] + "..."
+						}
+						return secret
+					}()),
+				)
 				if userID, role, ok := parseUserJWT(token, secret); ok {
 					r = r.WithContext(context.WithValue(r.Context(), ctxUserID, userID))
 					r = r.WithContext(context.WithValue(r.Context(), ctxUserRole, role))
@@ -27,6 +41,7 @@ func OptionalAuth(secret string) func(http.Handler) http.Handler {
 					slog.WarnContext(r.Context(), "OptionalAuth: JWT tidak valid atau expired, request dilanjutkan tanpa user",
 						slog.String("path", r.URL.Path),
 						slog.String("method", r.Method),
+						slog.Int("secret_len", len(secret)),
 					)
 				}
 			}
