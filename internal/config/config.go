@@ -63,7 +63,8 @@ type ValkeyConfig struct {
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 	cfg := &Config{
-		App:   AppConfig{Env: getEnv("APP_ENV", "local"), Port: getEnvInt("APP_PORT", 8082)},
+		// Cloud Run injects PORT env var. Prefer PORT, fallback to APP_PORT for local dev.
+		App:   AppConfig{Env: getEnv("APP_ENV", "local"), Port: getEnvInt("PORT", getEnvInt("APP_PORT", 8082))},
 		Log:   LogConfig{Level: getEnv("LOG_LEVEL", "info"), Format: getEnv("LOG_FORMAT", "json")},
 		DB: DBConfig{
 			Host: getEnv("DB_HOST", "localhost"), Port: getEnvInt("DB_PORT", 5432),
