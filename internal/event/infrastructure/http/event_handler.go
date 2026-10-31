@@ -43,12 +43,16 @@ func NewWiredHandler(pool *pgxpool.Pool, producer *kafka.Producer, valkeyClient 
 }
 
 // RegisterRoutes mendaftarkan semua route event ke mux.
-func RegisterRoutes(mux *http.ServeMux, h *Handler, accessTokenSecret string) {
+func RegisterRoutes(mux *http.ServeMux, h *Handler, accessTokenSecret, userJWTSecret string) {
 	withAccessToken := func(next http.HandlerFunc) http.Handler {
 		return middleware.Chain(http.HandlerFunc(next), middleware.RequireAccessToken(accessTokenSecret))
 	}
+	// Admin route pakai USER_JWT_SECRET (token dari user-service BE-1),
+	// bukan accessTokenSecret (token dari queue-service).
 	requireAdmin := func(next http.HandlerFunc) http.Handler {
-		return middleware.Chain(http.HandlerFunc(next), middleware.OptionalAuth(accessTokenSecret), middleware.RequireRole("admin"))
+		return middleware.Chain(http.HandlerFunc(next),
+			middleware.OptionalAuth(userJWTSecret),
+			middleware.RequireRole("admin"))
 	}
 
 	// Public
