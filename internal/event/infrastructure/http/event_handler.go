@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -94,6 +95,16 @@ func (h *Handler) GetEventDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		apinizer.WriteError(w, err)
 		return
+	}
+	// Inject remainingSeconds dari Access Token (bookingTtlExpiresAt).
+	// Ini adalah sisa waktu user untuk memilih kategori tiket (maks 5 menit).
+	// Kalau claims tidak ada atau TTL sudah lewat, kembalikan 0.
+	if claims, ok := middleware.GetAccessTokenClaims(r.Context()); ok && claims.BookingTTLExpiresAt > 0 {
+		remaining := int(claims.BookingTTLExpiresAt - time.Now().Unix())
+		if remaining < 0 {
+			remaining = 0
+		}
+		result.RemainingSeconds = remaining
 	}
 	apinizer.Success(w, "OK", result)
 }
