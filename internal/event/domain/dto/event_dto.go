@@ -26,10 +26,11 @@ type CategoryDTO struct {
 }
 
 type EventDetail struct {
-	ID         string        `json:"id"`
-	Name       string        `json:"name"`
-	Status     string        `json:"status"`
-	Categories []CategoryDTO `json:"categories"`
+	ID               string        `json:"id"`
+	Name             string        `json:"name"`
+	Status           string        `json:"status"`
+	Categories       []CategoryDTO `json:"categories"`
+	RemainingSeconds int           `json:"remainingSeconds"` // sisa TTL antrian (maks 5 menit dari bookingTtlExpiresAt Access Token)
 }
 
 // ---- Admin ----

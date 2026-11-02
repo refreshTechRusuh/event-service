@@ -12,29 +12,28 @@ import (
 type contextKey string
 
 const (
-	ctxUserID   contextKey = "userId"
-	ctxUserRole contextKey = "userRole"
+	ctxUserID            contextKey = "userId"
+	ctxUserRole          contextKey = "userRole"
+	ctxAccessTokenClaims contextKey = "accessTokenClaims"
 )
+
+// AccessTokenClaims adalah claim dari Access Token yang diterbitkan Queue Service.
+type AccessTokenClaims struct {
+	EventID             string `json:"eventId"`
+	QueueToken          string `json:"queueToken"`
+	BookingTTLExpiresAt int64  `json:"bookingTtlExpiresAt"` // unix timestamp
+}
+
+// GetAccessTokenClaims mengambil AccessTokenClaims dari context.
+func GetAccessTokenClaims(ctx context.Context) (*AccessTokenClaims, bool) {
+	v, ok := ctx.Value(ctxAccessTokenClaims).(*AccessTokenClaims)
+	return v, ok
+}
 
 func OptionalAuth(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if token := extractBearer(r); token != "" {
-				tokenPreview := token
-				if len(token) > 20 {
-					tokenPreview = token[:20] + "..."
-				}
-				slog.InfoContext(r.Context(), "OptionalAuth: mencoba parse JWT",
-					slog.String("token_prefix", tokenPreview),
-					slog.Int("secret_len", len(secret)),
-					slog.String("secret_prefix", func() string {
-						if len(secret) > 8 {
-							return secret[:8] + "..."
-						}
-						return secret
-					}()),
-					slog.String("DEBUG_REMOVE_secret", secret), // TODO: HAPUS SETELAH DEBUG
-				)
 				if userID, role, ok := parseUserJWT(token, secret); ok {
 					r = r.WithContext(context.WithValue(r.Context(), ctxUserID, userID))
 					r = r.WithContext(context.WithValue(r.Context(), ctxUserRole, role))
@@ -54,7 +53,8 @@ func OptionalAuth(secret string) func(http.Handler) http.Handler {
 func RequireAccessToken(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("X-Access-Token") == "" {
+			tokenStr := r.Header.Get("X-Access-Token")
+			if tokenStr == "" {
 				slog.ErrorContext(r.Context(), "RequireAccessToken: header X-Access-Token tidak ada",
 					slog.String("path", r.URL.Path),
 					slog.String("method", r.Method),
@@ -62,6 +62,11 @@ func RequireAccessToken(secret string) func(http.Handler) http.Handler {
 				)
 				http.Error(w, `{"status":"401","message":"Access Token tidak ada","data":{}}`, http.StatusUnauthorized)
 				return
+			}
+			// Parse JWT untuk ambil bookingTtlExpiresAt — dipakai hitung remainingSeconds di event detail.
+			// Kalau parsing gagal (misal token opaque dari BE-1), tetap lanjut tanpa claims.
+			if claims, err := parseAccessTokenClaims(tokenStr, secret); err == nil {
+				r = r.WithContext(context.WithValue(r.Context(), ctxAccessTokenClaims, claims))
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -142,4 +147,30 @@ func parseUserJWT(tokenStr, secret string) (string, string, bool) {
 		return "", "", false
 	}
 	return sub, role, true
+}
+
+// parseAccessTokenClaims mem-parse Access Token JWT (diterbitkan Queue Service)
+// dan mengekstrak AccessTokenClaims. Dipanggil oleh RequireAccessToken.
+// Kalau token bukan JWT (opaque) atau gagal verify, kembalikan error.
+func parseAccessTokenClaims(tokenStr, secret string) (*AccessTokenClaims, error) {
+	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || !token.Valid {
+		return nil, err
+	}
+	mc, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, jwt.ErrTokenInvalidClaims
+	}
+	claims := &AccessTokenClaims{}
+	claims.EventID, _ = mc["eventId"].(string)
+	claims.QueueToken, _ = mc["queueToken"].(string)
+	if v, ok := mc["bookingTtlExpiresAt"].(float64); ok {
+		claims.BookingTTLExpiresAt = int64(v)
+	}
+	return claims, nil
 }

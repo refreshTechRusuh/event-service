@@ -43,6 +43,7 @@ type DBConfig struct {
 
 type JWTConfig struct {
 	AccessTokenSecret string
+	UserJWTSecret     string
 }
 
 type KafkaConfig struct {
@@ -73,7 +74,10 @@ func Load() (*Config, error) {
 			MaxOpenConns: getEnvInt("DB_MAX_OPEN_CONNS", 25), MaxIdleConns: getEnvInt("DB_MAX_IDLE_CONNS", 10),
 			ConnTimeoutSecs: getEnvInt("DB_CONN_TIMEOUT_SECONDS", 5),
 		},
-		JWT: JWTConfig{AccessTokenSecret: mustEnv("ACCESS_TOKEN_SECRET")},
+		JWT: JWTConfig{
+			AccessTokenSecret: mustEnv("ACCESS_TOKEN_SECRET"),
+			UserJWTSecret:     getEnv("USER_JWT_SECRET", "dev-user-jwt-change-in-production"),
+		},
 		Kafka: KafkaConfig{
 			Brokers: getEnv("KAFKA_BROKERS", "localhost:9092"),
 			Username: getEnv("KAFKA_USERNAME", ""), Password: getEnv("KAFKA_PASSWORD", ""),

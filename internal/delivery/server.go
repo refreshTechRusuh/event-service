@@ -17,7 +17,7 @@ func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *ka
 	mux := http.NewServeMux()
 
 	handler := eventhttp.NewWiredHandler(pool, producer, valkeyClient)
-	eventhttp.RegisterRoutes(mux, handler, cfg.JWT.AccessTokenSecret)
+	eventhttp.RegisterRoutes(mux, handler, cfg.JWT.AccessTokenSecret, cfg.JWT.UserJWTSecret)
 
 	// Wrap seluruh mux dengan request logger — catat semua inbound request.
 	logged := middleware.RequestLogger(slog.Default())(mux)
