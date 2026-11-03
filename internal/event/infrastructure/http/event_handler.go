@@ -17,6 +17,7 @@ import (
 	"github.com/refreshTechRusuh/event-service/internal/event/port/inbound"
 	"github.com/refreshTechRusuh/event-service/internal/event/port/outbound"
 	"github.com/refreshTechRusuh/event-service/pkg/apinizer"
+	"github.com/refreshTechRusuh/event-service/pkg/apperror"
 	"github.com/refreshTechRusuh/event-service/pkg/kafka"
 	"github.com/refreshTechRusuh/event-service/pkg/middleware"
 	vk "github.com/valkey-io/valkey-go"
@@ -98,11 +99,13 @@ func (h *Handler) GetEventDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	// Inject remainingSeconds dari Access Token (bookingTtlExpiresAt).
 	// Ini adalah sisa waktu user untuk memilih kategori tiket (maks 5 menit).
-	// Kalau claims tidak ada atau TTL sudah lewat, kembalikan 0.
+	// Kalau token sudah expired (bookingTtlExpiresAt < now), return 410 TOKEN_EXPIRED.
+	// Kalau claims tidak ada (token opaque dari BE-1 atau parsing gagal), remainingSeconds = 0.
 	if claims, ok := middleware.GetAccessTokenClaims(r.Context()); ok && claims.BookingTTLExpiresAt > 0 {
 		remaining := int(claims.BookingTTLExpiresAt - time.Now().Unix())
-		if remaining < 0 {
-			remaining = 0
+		if remaining <= 0 {
+			apinizer.WriteError(w, apperror.TokenExpired())
+			return
 		}
 		result.RemainingSeconds = remaining
 	}
