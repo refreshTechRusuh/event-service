@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -64,8 +65,30 @@ func RequireAccessToken(secret string) func(http.Handler) http.Handler {
 				return
 			}
 			// Parse JWT untuk ambil bookingTtlExpiresAt — dipakai hitung remainingSeconds di event detail.
-			// Kalau parsing gagal (misal token opaque dari BE-1), tetap lanjut tanpa claims.
-			if claims, err := parseAccessTokenClaims(tokenStr, secret); err == nil {
+			// Kalau token expired, tolak dengan 401.
+			// Kalau token bukan JWT (opaque dari BE-1), tetap lanjut tanpa claims.
+			claims, err := parseAccessTokenClaims(tokenStr, secret)
+			if err != nil {
+				// Hanya tolak kalau token adalah JWT tapi expired/invalid.
+				// Token opaque (non-JWT) tidak akan bisa di-parse dan dibiarkan lewat.
+				if isJWT(tokenStr) {
+					slog.ErrorContext(r.Context(), "RequireAccessToken: Access Token expired atau tidak valid",
+						slog.String("path", r.URL.Path),
+						slog.String("error", err.Error()),
+					)
+					http.Error(w, `{"status":"401","message":"Access Token expired atau tidak valid","data":{}}`, http.StatusUnauthorized)
+					return
+				}
+			} else {
+				// Token valid -- cek apakah sudah expired berdasarkan bookingTtlExpiresAt
+				if claims.BookingTTLExpiresAt > 0 && time.Now().Unix() > claims.BookingTTLExpiresAt {
+					slog.ErrorContext(r.Context(), "RequireAccessToken: Access Token sudah expired (bookingTtlExpiresAt)",
+						slog.String("path", r.URL.Path),
+						slog.Int64("expired_at", claims.BookingTTLExpiresAt),
+					)
+					http.Error(w, `{"status":"401","message":"Access Token sudah expired","data":{}}`, http.StatusUnauthorized)
+					return
+				}
 				r = r.WithContext(context.WithValue(r.Context(), ctxAccessTokenClaims, claims))
 			}
 			next.ServeHTTP(w, r)
@@ -173,4 +196,9 @@ func parseAccessTokenClaims(tokenStr, secret string) (*AccessTokenClaims, error)
 		claims.BookingTTLExpiresAt = int64(v)
 	}
 	return claims, nil
+}
+
+// isJWT cek apakah string adalah format JWT (3 bagian dipisah titik).
+func isJWT(s string) bool {
+	return strings.Count(s, ".") == 2
 }
