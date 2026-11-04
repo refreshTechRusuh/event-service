@@ -28,6 +28,18 @@ var validate = validator.New()
 // Handler memegang semua HTTP handler untuk event domain.
 type Handler struct{ usecase inbound.IEventUsecase }
 
+// NewHandlerWithUsecase membuat Handler dengan usecase yang sudah di-inject.
+// Dipakai di unit test untuk inject mock usecase tanpa butuh DB/Kafka/Valkey.
+func NewHandlerWithUsecase(uc inbound.IEventUsecase) *Handler {
+	return &Handler{usecase: uc}
+}
+
+// RegisterRoutesWithSecrets mendaftarkan routes dengan secrets eksplisit.
+// Dipakai di unit test agar secrets bisa dikontrol tanpa config lengkap.
+func RegisterRoutesWithSecrets(mux *http.ServeMux, h *Handler, accessTokenSecret, userJWTSecret string) {
+	RegisterRoutes(mux, h, accessTokenSecret, userJWTSecret)
+}
+
 // NewWiredHandler mewiring semua dependency (factory).
 func NewWiredHandler(pool *pgxpool.Pool, producer *kafka.Producer, valkeyClient vk.Client) *Handler {
 	log := slog.Default()
