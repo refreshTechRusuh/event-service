@@ -20,7 +20,10 @@ func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *ka
 	eventhttp.RegisterRoutes(mux, handler, cfg.JWT.AccessTokenSecret, cfg.JWT.UserJWTSecret)
 
 	// Wrap seluruh mux dengan request logger — catat semua inbound request.
+	// OtelMiddleware di-apply paling luar agar span mencakup seluruh request lifecycle
+	// termasuk logging middleware.
 	logged := middleware.RequestLogger(slog.Default())(mux)
+	traced := middleware.OtelMiddleware("event-service")(logged)
 
 	closeFn := func() {
 		pool.Close()
@@ -31,5 +34,5 @@ func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *ka
 			valkeyClient.Close()
 		}
 	}
-	return logged, closeFn, nil
+	return traced, closeFn, nil
 }
