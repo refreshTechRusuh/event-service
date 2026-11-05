@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/refreshTechRusuh/event-service/internal/event/domain/entity"
 	"github.com/refreshTechRusuh/event-service/pkg/apperror"
 )
@@ -48,11 +47,11 @@ func dbLog(ctx context.Context, log *slog.Logger, op, sql string, start time.Tim
 }
 
 type EventRepository struct {
-	pool *pgxpool.Pool
+	pool IPool
 	log  *slog.Logger
 }
 
-func NewEventRepository(pool *pgxpool.Pool, log *slog.Logger) *EventRepository {
+func NewEventRepository(pool IPool, log *slog.Logger) *EventRepository {
 	return &EventRepository{pool: pool, log: log}
 }
 
