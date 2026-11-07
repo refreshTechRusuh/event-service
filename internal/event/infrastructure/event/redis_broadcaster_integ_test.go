@@ -52,3 +52,31 @@ func TestRedisStockBroadcaster_BroadcastSoldOut_idempotent(t *testing.T) {
 	require.NoError(t, broadcaster.BroadcastSoldOut(ctx, "event-repeat"))
 	require.NoError(t, broadcaster.BroadcastSoldOut(ctx, "event-repeat"))
 }
+
+// ── BroadcastSoldOut — error path ─────────────────────────────────────────────
+
+func TestRedisStockBroadcaster_BroadcastSoldOut_redisError(t *testing.T) {
+	mr := miniredis.RunT(t)
+	c, err := vk.NewClient(vk.ClientOption{
+		InitAddress:  []string{mr.Addr()},
+		DisableCache: true,
+	})
+	require.NoError(t, err)
+	defer c.Close()
+
+	broadcaster := event.NewRedisStockBroadcaster(c, discardLog())
+
+	// Stop miniredis sebelum broadcast → koneksi gagal → error path tercakup
+	mr.Close()
+
+	err = broadcaster.BroadcastSoldOut(context.Background(), "event-err")
+	require.Error(t, err)
+}
+
+// ── NewKafkaProducer constructor ───────────────────────────────────────────────
+
+func TestNewKafkaProducer_nilProducer(t *testing.T) {
+	// Konstruktor tidak connect ke Kafka — hanya menyimpan referensi
+	p := event.NewKafkaProducer(nil, discardLog())
+	require.NotNil(t, p)
+}

@@ -268,3 +268,85 @@ func TestEventRepository_UpdateCategory_notFound(t *testing.T) {
 	require.True(t, errors.As(err, &appErr))
 	assert.Equal(t, apperror.ErrNotFound, appErr.Code)
 }
+
+// ── Additional error/edge case tests ─────────────────────────────────────────
+
+func TestEventRepository_CountAll_error(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	mock.ExpectQuery("SELECT COUNT").WillReturnError(errors.New("db error"))
+	_, err := repo.CountAll(context.Background())
+	require.Error(t, err)
+}
+
+func TestEventRepository_GetByID_dbError(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	mock.ExpectQuery("SELECT").WithArgs("event-1").WillReturnError(errors.New("db error"))
+	_, err := repo.GetByID(context.Background(), "event-1")
+	require.Error(t, err)
+}
+
+func TestEventRepository_ListCategories_error(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	mock.ExpectQuery("SELECT").WithArgs("event-1").WillReturnError(errors.New("db error"))
+	_, err := repo.ListCategories(context.Background(), "event-1")
+	require.Error(t, err)
+}
+
+func TestEventRepository_GetCategoryByID_dbError(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	mock.ExpectQuery("SELECT").WithArgs("cat-1").WillReturnError(errors.New("db error"))
+	_, err := repo.GetCategoryByID(context.Background(), "cat-1")
+	require.Error(t, err)
+}
+
+func TestEventRepository_CreateCategory_dbError(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	cat := entity.TicketCategory{ID: "cat-1", EventID: "event-1", Name: "VIP", Price: 500000, Capacity: 100, Available: 100}
+	mock.ExpectExec("INSERT INTO ticket_category").
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WillReturnError(errors.New("duplicate key"))
+	err := repo.CreateCategory(context.Background(), cat)
+	require.Error(t, err)
+}
+
+func TestEventRepository_Update_dbError(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	now := time.Now().UTC()
+	nowPtr := &now
+	e := entity.Event{ID: "event-1", Name: "X", SaleOpensAt: nowPtr, Status: entity.EventStatusOnSale}
+	mock.ExpectExec("UPDATE event SET").
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WillReturnError(errors.New("db error"))
+	err := repo.Update(context.Background(), e)
+	require.Error(t, err)
+}
+
+func TestEventRepository_ExistsByName_error(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	mock.ExpectQuery("SELECT EXISTS").WithArgs("X").WillReturnError(errors.New("db error"))
+	_, err := repo.ExistsByName(context.Background(), "X")
+	require.Error(t, err)
+}
+
+func TestEventRepository_ListAll_error(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	mock.ExpectQuery("SELECT").WillReturnError(errors.New("db error"))
+	_, err := repo.ListAll(context.Background())
+	require.Error(t, err)
+}
+
+func TestEventRepository_ListPaged_error(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnError(errors.New("db error"))
+	_, err := repo.ListPaged(context.Background(), 10, 0)
+	require.Error(t, err)
+}

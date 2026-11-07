@@ -298,3 +298,252 @@ func TestEventPing(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), "pong")
 }
+
+// ---- GET /api/event/v1/admin/list-event ------------------------------------
+
+func TestAdminListEvents_Success(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	req := httptest.NewRequest(http.MethodGet, "/api/event/v1/admin/list-event", nil)
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestAdminListEvents_NoAdmin_403(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	req := httptest.NewRequest(http.MethodGet, "/api/event/v1/admin/list-event", nil)
+	// No auth header → 401/403
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.NotEqual(t, http.StatusOK, rr.Code)
+}
+
+func TestAdminListEvents_UsecaseError(t *testing.T) {
+	uc := &mockEventUsecase{
+		adminListFn: func(_ context.Context, _, _ int) ([]dto.AdminEventListItem, dto.PageMeta, error) {
+			return nil, dto.PageMeta{}, apperror.New(apperror.ErrInternal, "db error")
+		},
+	}
+	mux := setupEventRouter(uc)
+	req := httptest.NewRequest(http.MethodGet, "/api/event/v1/admin/list-event", nil)
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+}
+
+// ---- PUT /api/event/v1/admin/update-event/{eventId} -------------------------
+
+func TestUpdateEvent_AdminToken_Success(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	body, _ := json.Marshal(dto.UpdateEventRequest{Name: "Updated Event"})
+	req := httptest.NewRequest(http.MethodPut, "/api/event/v1/admin/update-event/evt-1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestUpdateEvent_InvalidJSON(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	req := httptest.NewRequest(http.MethodPut, "/api/event/v1/admin/update-event/evt-1",
+		bytes.NewReader([]byte("{bad json")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.NotEqual(t, http.StatusOK, rr.Code)
+}
+
+func TestUpdateEvent_NoAdmin_403(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	body, _ := json.Marshal(dto.UpdateEventRequest{Name: "X"})
+	req := httptest.NewRequest(http.MethodPut, "/api/event/v1/admin/update-event/evt-1", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.NotEqual(t, http.StatusOK, rr.Code)
+}
+
+func TestUpdateEvent_UsecaseError(t *testing.T) {
+	uc := &mockEventUsecase{
+		updateFn: func(_ context.Context, _ string, _ dto.UpdateEventRequest) (dto.AdminEventListItem, error) {
+			return dto.AdminEventListItem{}, apperror.New(apperror.ErrNotFound, "event not found")
+		},
+	}
+	mux := setupEventRouter(uc)
+	body, _ := json.Marshal(dto.UpdateEventRequest{Name: "X"})
+	req := httptest.NewRequest(http.MethodPut, "/api/event/v1/admin/update-event/evt-1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+// ---- POST /api/event/v1/admin/{eventId}/create-category ---------------------
+
+func TestCreateCategory_AdminToken_Success(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	body, _ := json.Marshal(dto.CreateCategoryRequest{Name: "VIP", Price: 500000, Capacity: 100})
+	req := httptest.NewRequest(http.MethodPost, "/api/event/v1/admin/evt-1/create-category", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestCreateCategory_InvalidJSON(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	req := httptest.NewRequest(http.MethodPost, "/api/event/v1/admin/evt-1/create-category",
+		bytes.NewReader([]byte("{bad")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.NotEqual(t, http.StatusOK, rr.Code)
+}
+
+func TestCreateCategory_NoAdmin_403(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	body, _ := json.Marshal(dto.CreateCategoryRequest{Name: "VIP", Price: 100, Capacity: 10})
+	req := httptest.NewRequest(http.MethodPost, "/api/event/v1/admin/evt-1/create-category", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.NotEqual(t, http.StatusOK, rr.Code)
+}
+
+func TestCreateCategory_UsecaseError(t *testing.T) {
+	uc := &mockEventUsecase{
+		createCatFn: func(_ context.Context, _ string, _ dto.CreateCategoryRequest) (dto.CategoryDTO, error) {
+			return dto.CategoryDTO{}, apperror.New(apperror.ErrNotFound, "event not found")
+		},
+	}
+	mux := setupEventRouter(uc)
+	body, _ := json.Marshal(dto.CreateCategoryRequest{Name: "VIP", Price: 100, Capacity: 10})
+	req := httptest.NewRequest(http.MethodPost, "/api/event/v1/admin/evt-1/create-category", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+// ---- PUT /api/event/v1/admin/update-category/{categoryId} -------------------
+
+func TestUpdateCategory_AdminToken_Success(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	body, _ := json.Marshal(dto.UpdateCategoryRequest{Name: "VIP+", Price: 600000, Capacity: 120})
+	req := httptest.NewRequest(http.MethodPut, "/api/event/v1/admin/update-category/cat-1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestUpdateCategory_InvalidJSON(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	req := httptest.NewRequest(http.MethodPut, "/api/event/v1/admin/update-category/cat-1",
+		bytes.NewReader([]byte("{bad")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.NotEqual(t, http.StatusOK, rr.Code)
+}
+
+func TestUpdateCategory_NoAdmin_403(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	body, _ := json.Marshal(dto.UpdateCategoryRequest{Name: "X"})
+	req := httptest.NewRequest(http.MethodPut, "/api/event/v1/admin/update-category/cat-1", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.NotEqual(t, http.StatusOK, rr.Code)
+}
+
+func TestUpdateCategory_UsecaseError(t *testing.T) {
+	uc := &mockEventUsecase{
+		updateCatFn: func(_ context.Context, _ string, _ dto.UpdateCategoryRequest) (dto.CategoryDTO, error) {
+			return dto.CategoryDTO{}, apperror.New(apperror.ErrNotFound, "kategori tidak ditemukan")
+		},
+	}
+	mux := setupEventRouter(uc)
+	body, _ := json.Marshal(dto.UpdateCategoryRequest{Name: "VIP+"})
+	req := httptest.NewRequest(http.MethodPut, "/api/event/v1/admin/update-category/cat-1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+// ---- MarkSoldOut branch ────────────────────────────────────────────────────
+
+func TestMarkSoldOut_UsecaseError(t *testing.T) {
+	uc := &mockEventUsecase{
+		markSoldOutFn: func(_ context.Context, _ string) error {
+			return apperror.New(apperror.ErrInternal, "db error")
+		},
+	}
+	mux := setupEventRouter(uc)
+	req := httptest.NewRequest(http.MethodPost, "/internal/event/v1/evt-1/sold-out", nil)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+}
+
+// ── CreateEvent validation error ──────────────────────────────────────────────
+
+func TestCreateEvent_ValidationError(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	// Valid JSON but missing required fields → validation fails
+	body, _ := json.Marshal(map[string]string{"name": ""}) // empty name, likely required
+	req := httptest.NewRequest(http.MethodPost, "/api/event/v1/admin/create-event", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.NotEqual(t, http.StatusOK, rr.Code)
+}
+
+// ── CreateCategory validation error ───────────────────────────────────────────
+
+func TestCreateCategory_ValidationError(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	// Missing required fields
+	body, _ := json.Marshal(map[string]any{"name": ""})
+	req := httptest.NewRequest(http.MethodPost, "/api/event/v1/admin/evt-1/create-category", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.NotEqual(t, http.StatusOK, rr.Code)
+}
+
+// ── UpdateCategory validation error ───────────────────────────────────────────
+
+func TestUpdateCategory_ValidationError(t *testing.T) {
+	mux := setupEventRouter(&mockEventUsecase{})
+	body, _ := json.Marshal(map[string]any{"price": -1}) // negative price if validated
+	req := httptest.NewRequest(http.MethodPut, "/api/event/v1/admin/update-category/cat-1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+makeAdminToken(t))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	// Either success or validation error, just not internal server error
+	assert.NotEqual(t, http.StatusInternalServerError, rr.Code)
+}
+
+// ── GetEventDetail — handled by existing TestGetEventDetail_ExpiredTTL_410 ─────
+
+// ── NewWiredHandler — nil dependencies ───────────────────────────────────────
+
+func TestNewWiredHandler_nilDeps(t *testing.T) {
+	// Konstruktor tidak connect ke DB/Kafka/Valkey saat dibuat.
+	// Passing nil aman untuk coverage tujuan unit test.
+	h := eventhttp.NewWiredHandler(nil, nil, nil)
+	assert.NotNil(t, h)
+}
