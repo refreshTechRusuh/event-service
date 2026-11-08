@@ -87,7 +87,7 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, accessTokenSecret, userJWTSe
 	// Health
 	mux.HandleFunc("GET /sys/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"00000","message":"pong","data":{}}`))
+		w.Write([]byte(`{"status":"00000","message":"pong","data":{}}`)) // #nosec G104 -- health endpoint, write errors ignorable
 	})
 }
 

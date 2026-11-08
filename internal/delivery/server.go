@@ -28,7 +28,7 @@ func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *ka
 	closeFn := func() {
 		pool.Close()
 		if producer != nil {
-			producer.Close()
+			producer.Close() // #nosec G104 -- shutdown, error irrelevant
 		}
 		if valkeyClient != nil {
 			valkeyClient.Close()

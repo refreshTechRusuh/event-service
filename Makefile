@@ -18,3 +18,7 @@ gen-mock-event-outbound:
 gen-mocks: gen-mock-event-inbound gen-mock-event-outbound
 docker-build: build
 	docker build -f Dockerfile -t event-service:latest .
+
+scan:
+	@echo "Running security scan"
+	gosec ./...
