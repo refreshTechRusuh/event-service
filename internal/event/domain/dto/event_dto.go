@@ -6,6 +6,7 @@ type EventListItem struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Status      string `json:"status"`
+	PosterURL   string `json:"posterUrl,omitempty"`
 	SaleOpensAt string `json:"saleOpensAt,omitempty"`
 }
 
@@ -29,6 +30,8 @@ type EventDetail struct {
 	ID               string        `json:"id"`
 	Name             string        `json:"name"`
 	Status           string        `json:"status"`
+	PosterURL        string        `json:"posterUrl,omitempty"`
+	Description      string        `json:"description,omitempty"`
 	Categories       []CategoryDTO `json:"categories"`
 	RemainingSeconds int           `json:"remainingSeconds"` // sisa TTL antrian (maks 5 menit dari bookingTtlExpiresAt Access Token)
 }
@@ -37,21 +40,27 @@ type EventDetail struct {
 
 type CreateEventRequest struct {
 	Name        string `json:"name"        validate:"required"`
+	Description string `json:"description"`
+	PosterURL   string `json:"posterUrl"`
 	SaleOpensAt string `json:"saleOpensAt"`
 	Status      string `json:"status"      validate:"omitempty,oneof=draft on_sale closed"` // opsional, default draft
 }
 
 type UpdateEventRequest struct {
 	Name        string `json:"name"`
+	Description string `json:"description"`
+	PosterURL   string `json:"posterUrl"`
 	SaleOpensAt string `json:"saleOpensAt"`
 	Status      string `json:"status"`
 }
 
 type AdminEventListItem struct {
-	ID         string        `json:"id"`
-	Name       string        `json:"name"`
-	Status     string        `json:"status"`
-	Categories []CategoryDTO `json:"categories"`
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Status      string        `json:"status"`
+	PosterURL   string        `json:"posterUrl,omitempty"`
+	Description string        `json:"description,omitempty"`
+	Categories  []CategoryDTO `json:"categories"`
 }
 
 type CreateCategoryRequest struct {

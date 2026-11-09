@@ -56,6 +56,33 @@ func (m *mockRepo) CountAll(_ context.Context) (int, error) {
 	return len(m.events), nil
 }
 
+func (m *mockRepo) CountPublic(_ context.Context) (int, error) {
+	count := 0
+	for _, e := range m.events {
+		if e.Status != "draft" && e.Status != "closed" {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (m *mockRepo) ListPagedPublic(_ context.Context, limit, offset int) ([]entity.Event, error) {
+	var all []entity.Event
+	for _, e := range m.events {
+		if e.Status != "draft" && e.Status != "closed" {
+			all = append(all, e)
+		}
+	}
+	if offset >= len(all) {
+		return []entity.Event{}, nil
+	}
+	end := offset + limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return all[offset:end], nil
+}
+
 func (m *mockRepo) GetByID(_ context.Context, id string) (entity.Event, error) {
 	e, ok := m.events[id]
 	if !ok {

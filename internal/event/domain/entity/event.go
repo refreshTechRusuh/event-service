@@ -14,6 +14,8 @@ const (
 type Event struct {
 	ID          string
 	Name        string
+	PosterURL   string
+	Description string
 	SaleOpensAt *time.Time
 	Status      EventStatus
 	CreatedAt   time.Time

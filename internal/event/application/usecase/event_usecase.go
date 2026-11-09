@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -25,21 +26,27 @@ func NewEventUsecase(repo outbound.IEventRepository, producer outbound.IEventPro
 
 // ---- Public read -----------------------------------------------------------
 
-// ListEvents mengembalikan daftar event ter-paginate beserta info meta.
+// ListEvents mengembalikan daftar event publik (on_sale & sold_out) ter-paginate.
+// Event dengan status draft dan closed TIDAK ditampilkan ke publik.
 // page 1-based, size di-clamp ke rentang aman di handler sebelum sampai sini.
 func (u *EventUsecase) ListEvents(ctx context.Context, page, size int) ([]dto.EventListItem, dto.PageMeta, error) {
-	total, err := u.repo.CountAll(ctx)
+	total, err := u.repo.CountPublic(ctx)
 	if err != nil {
 		return nil, dto.PageMeta{}, apperror.Internal(err)
 	}
 	offset := (page - 1) * size
-	events, err := u.repo.ListPaged(ctx, size, offset)
+	events, err := u.repo.ListPagedPublic(ctx, size, offset)
 	if err != nil {
 		return nil, dto.PageMeta{}, apperror.Internal(err)
 	}
 	result := make([]dto.EventListItem, 0, len(events))
 	for _, e := range events {
-		item := dto.EventListItem{ID: e.ID, Name: e.Name, Status: string(e.Status)}
+		item := dto.EventListItem{
+			ID:        e.ID,
+			Name:      e.Name,
+			Status:    string(e.Status),
+			PosterURL: e.PosterURL,
+		}
 		if e.SaleOpensAt != nil {
 			item.SaleOpensAt = e.SaleOpensAt.UTC().Format(time.RFC3339)
 		}
@@ -68,7 +75,14 @@ func (u *EventUsecase) GetEventDetail(ctx context.Context, eventID string) (dto.
 			ID: c.ID, Name: c.Name, Price: c.Price, Available: c.Available,
 		})
 	}
-	return dto.EventDetail{ID: e.ID, Name: e.Name, Status: string(e.Status), Categories: catDTOs}, nil
+	return dto.EventDetail{
+		ID:          e.ID,
+		Name:        e.Name,
+		Status:      string(e.Status),
+		PosterURL:   e.PosterURL,
+		Description: e.Description,
+		Categories:  catDTOs,
+	}, nil
 }
 
 // ---- Admin -----------------------------------------------------------------
@@ -94,7 +108,9 @@ func (u *EventUsecase) AdminListEvents(ctx context.Context, page, size int) ([]d
 			})
 		}
 		result = append(result, dto.AdminEventListItem{
-			ID: e.ID, Name: e.Name, Status: string(e.Status), Categories: catDTOs,
+			ID: e.ID, Name: e.Name, Status: string(e.Status),
+			PosterURL: e.PosterURL, Description: e.Description,
+			Categories: catDTOs,
 		})
 	}
 	totalPages := 0
@@ -119,10 +135,19 @@ func (u *EventUsecase) CreateEvent(ctx context.Context, req dto.CreateEventReque
 		return dto.AdminEventListItem{}, apperror.DuplicateEvent(req.Name)
 	}
 	e := entity.Event{
-		ID:        uuid.New().String(),
-		Name:      req.Name,
-		Status:    entity.EventStatus(status),
-		CreatedAt: time.Now(),
+		ID:          uuid.New().String(),
+		Name:        req.Name,
+		Description: req.Description,
+		Status:      entity.EventStatus(status),
+		CreatedAt:   time.Now(),
+	}
+	// Auto-generate poster URL bila tidak disediakan.
+	// Menggunakan Picsum Photos dengan seed event ID — gratis, deterministik per event,
+	// tidak memerlukan API key. Setiap event mendapat gambar unik yang konsisten.
+	if req.PosterURL != "" {
+		e.PosterURL = req.PosterURL
+	} else {
+		e.PosterURL = fmt.Sprintf("https://picsum.photos/seed/%s/800/600", e.ID)
 	}
 	if req.SaleOpensAt != "" {
 		t, err := time.Parse(time.RFC3339, req.SaleOpensAt)
@@ -134,7 +159,13 @@ func (u *EventUsecase) CreateEvent(ctx context.Context, req dto.CreateEventReque
 	if err := u.repo.Create(ctx, e); err != nil {
 		return dto.AdminEventListItem{}, apperror.Internal(err)
 	}
-	return dto.AdminEventListItem{ID: e.ID, Name: e.Name, Status: string(e.Status)}, nil
+	return dto.AdminEventListItem{
+		ID:          e.ID,
+		Name:        e.Name,
+		Status:      string(e.Status),
+		PosterURL:   e.PosterURL,
+		Description: e.Description,
+	}, nil
 }
 
 func (u *EventUsecase) UpdateEvent(ctx context.Context, eventID string, req dto.UpdateEventRequest) (dto.AdminEventListItem, error) {
@@ -144,6 +175,12 @@ func (u *EventUsecase) UpdateEvent(ctx context.Context, eventID string, req dto.
 	}
 	if req.Name != "" {
 		e.Name = req.Name
+	}
+	if req.Description != "" {
+		e.Description = req.Description
+	}
+	if req.PosterURL != "" {
+		e.PosterURL = req.PosterURL
 	}
 	if req.Status != "" {
 		e.Status = entity.EventStatus(req.Status)
@@ -158,7 +195,13 @@ func (u *EventUsecase) UpdateEvent(ctx context.Context, eventID string, req dto.
 	if err := u.repo.Update(ctx, e); err != nil {
 		return dto.AdminEventListItem{}, apperror.Internal(err)
 	}
-	return dto.AdminEventListItem{ID: e.ID, Name: e.Name, Status: string(e.Status)}, nil
+	return dto.AdminEventListItem{
+		ID:          e.ID,
+		Name:        e.Name,
+		Status:      string(e.Status),
+		PosterURL:   e.PosterURL,
+		Description: e.Description,
+	}, nil
 }
 
 func (u *EventUsecase) DeleteEvent(ctx context.Context, eventID string) error {

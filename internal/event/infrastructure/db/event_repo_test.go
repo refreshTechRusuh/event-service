@@ -64,8 +64,8 @@ func TestEventRepository_GetByID_found(t *testing.T) {
 	repo := db.NewEventRepository(mock, discardLog())
 
 	now := time.Now().UTC()
-	rows := pgxmock.NewRows([]string{"id", "name", "sale_opens_at", "status", "created_at"}).
-		AddRow("event-1", "Konser A", now, entity.EventStatusOnSale, now)
+	rows := pgxmock.NewRows([]string{"id", "name", "sale_opens_at", "status", "poster_url", "description", "created_at"}).
+		AddRow("event-1", "Konser A", now, entity.EventStatusOnSale, "", "", now)
 	mock.ExpectQuery("SELECT").WithArgs("event-1").WillReturnRows(rows)
 
 	event, err := repo.GetByID(context.Background(), "event-1")
@@ -119,7 +119,7 @@ func TestEventRepository_Create_success(t *testing.T) {
 	nowPtr := &now
 	e := entity.Event{ID: "event-1", Name: "Konser A", SaleOpensAt: nowPtr, Status: entity.EventStatusOnSale, CreatedAt: now}
 	mock.ExpectExec("INSERT INTO event").
-		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 
 	err := repo.Create(context.Background(), e)
@@ -134,7 +134,7 @@ func TestEventRepository_Create_dbError(t *testing.T) {
 	nowPtr := &now
 	e := entity.Event{ID: "event-1", Name: "Konser A", SaleOpensAt: nowPtr, Status: entity.EventStatusOnSale, CreatedAt: now}
 	mock.ExpectExec("INSERT INTO event").
-		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnError(errors.New("duplicate key"))
 
 	err := repo.Create(context.Background(), e)
@@ -149,7 +149,7 @@ func TestEventRepository_Update(t *testing.T) {
 	nowPtr := &now
 	e := entity.Event{ID: "event-1", Name: "Updated", SaleOpensAt: nowPtr, Status: entity.EventStatusOnSale}
 	mock.ExpectExec("UPDATE event SET").
-		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 
 	err := repo.Update(context.Background(), e)
@@ -321,7 +321,7 @@ func TestEventRepository_Update_dbError(t *testing.T) {
 	nowPtr := &now
 	e := entity.Event{ID: "event-1", Name: "X", SaleOpensAt: nowPtr, Status: entity.EventStatusOnSale}
 	mock.ExpectExec("UPDATE event SET").
-		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnError(errors.New("db error"))
 	err := repo.Update(context.Background(), e)
 	require.Error(t, err)
@@ -348,5 +348,33 @@ func TestEventRepository_ListPaged_error(t *testing.T) {
 	repo := db.NewEventRepository(mock, discardLog())
 	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnError(errors.New("db error"))
 	_, err := repo.ListPaged(context.Background(), 10, 0)
+	require.Error(t, err)
+}
+
+func TestEventRepository_CountPublic(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+
+	rows := pgxmock.NewRows([]string{"count"}).AddRow(3)
+	mock.ExpectQuery("SELECT COUNT").WillReturnRows(rows)
+
+	count, err := repo.CountPublic(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 3, count)
+}
+
+func TestEventRepository_CountPublic_error(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	mock.ExpectQuery("SELECT COUNT").WillReturnError(errors.New("db error"))
+	_, err := repo.CountPublic(context.Background())
+	require.Error(t, err)
+}
+
+func TestEventRepository_ListPagedPublic_error(t *testing.T) {
+	mock := newMock(t)
+	repo := db.NewEventRepository(mock, discardLog())
+	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnError(errors.New("db error"))
+	_, err := repo.ListPagedPublic(context.Background(), 10, 0)
 	require.Error(t, err)
 }

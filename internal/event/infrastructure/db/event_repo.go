@@ -56,13 +56,15 @@ func NewEventRepository(pool IPool, log *slog.Logger) *EventRepository {
 }
 
 const (
-	sqlEventListAll      = `SELECT id, name, sale_opens_at, status, created_at FROM event ORDER BY created_at DESC`
-	sqlEventListPaged    = `SELECT id, name, sale_opens_at, status, created_at FROM event ORDER BY created_at DESC LIMIT $1 OFFSET $2`
+	sqlEventListAll      = `SELECT id, name, sale_opens_at, status, poster_url, description, created_at FROM event ORDER BY created_at DESC`
+	sqlEventListPaged    = `SELECT id, name, sale_opens_at, status, poster_url, description, created_at FROM event ORDER BY created_at DESC LIMIT $1 OFFSET $2`
+	sqlEventListPublic   = `SELECT id, name, sale_opens_at, status, poster_url, description, created_at FROM event WHERE status NOT IN ('draft','closed') ORDER BY created_at DESC LIMIT $1 OFFSET $2`
 	sqlEventCountAll     = `SELECT COUNT(*) FROM event`
-	sqlEventGetByID      = `SELECT id, name, sale_opens_at, status, created_at FROM event WHERE id = $1`
+	sqlEventCountPublic  = `SELECT COUNT(*) FROM event WHERE status NOT IN ('draft','closed')`
+	sqlEventGetByID      = `SELECT id, name, sale_opens_at, status, poster_url, description, created_at FROM event WHERE id = $1`
 	sqlEventExistsByName = `SELECT EXISTS(SELECT 1 FROM event WHERE LOWER(name) = LOWER($1))`
-	sqlEventInsert       = `INSERT INTO event (id, name, sale_opens_at, status, created_at) VALUES ($1,$2,$3,$4,$5)`
-	sqlEventUpdate       = `UPDATE event SET name=$2, sale_opens_at=$3, status=$4 WHERE id=$1`
+	sqlEventInsert       = `INSERT INTO event (id, name, sale_opens_at, status, poster_url, description, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`
+	sqlEventUpdate       = `UPDATE event SET name=$2, sale_opens_at=$3, status=$4, poster_url=$5, description=$6 WHERE id=$1`
 	sqlEventSoftDelete   = `UPDATE event SET status='closed' WHERE id=$1`
 
 	sqlCategoryList    = `SELECT id, event_id, name, price, capacity, available FROM ticket_category WHERE event_id=$1 ORDER BY name`
@@ -82,7 +84,7 @@ func (r *EventRepository) ListAll(ctx context.Context) ([]entity.Event, error) {
 	var result []entity.Event
 	for rows.Next() {
 		var e entity.Event
-		if err := rows.Scan(&e.ID, &e.Name, &e.SaleOpensAt, &e.Status, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Name, &e.SaleOpensAt, &e.Status, &e.PosterURL, &e.Description, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, e)
@@ -103,7 +105,7 @@ func (r *EventRepository) ListPaged(ctx context.Context, limit, offset int) ([]e
 	var result []entity.Event
 	for rows.Next() {
 		var e entity.Event
-		if err := rows.Scan(&e.ID, &e.Name, &e.SaleOpensAt, &e.Status, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Name, &e.SaleOpensAt, &e.Status, &e.PosterURL, &e.Description, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, e)
@@ -124,11 +126,46 @@ func (r *EventRepository) CountAll(ctx context.Context) (int, error) {
 	return total, nil
 }
 
+// CountPublic menghitung event yang tampil ke publik (status bukan draft/closed).
+func (r *EventRepository) CountPublic(ctx context.Context) (int, error) {
+	start := time.Now()
+	var total int
+	if err := r.pool.QueryRow(ctx, sqlEventCountPublic).Scan(&total); err != nil {
+		dbLog(ctx, r.log, "event.count_public", sqlEventCountPublic, start, err)
+		return 0, fmt.Errorf("event count public: %w", err)
+	}
+	dbLog(ctx, r.log, "event.count_public", sqlEventCountPublic, start, nil, slog.Int("total", total))
+	return total, nil
+}
+
+// ListPagedPublic mengembalikan event publik (status NOT IN draft,closed) dengan pagination.
+func (r *EventRepository) ListPagedPublic(ctx context.Context, limit, offset int) ([]entity.Event, error) {
+	start := time.Now()
+	rows, err := r.pool.Query(ctx, sqlEventListPublic, limit, offset)
+	if err != nil {
+		dbLog(ctx, r.log, "event.list_public", sqlEventListPublic, start, err,
+			slog.Int("limit", limit), slog.Int("offset", offset))
+		return nil, fmt.Errorf("event list public: %w", err)
+	}
+	defer rows.Close()
+	var result []entity.Event
+	for rows.Next() {
+		var e entity.Event
+		if err := rows.Scan(&e.ID, &e.Name, &e.SaleOpensAt, &e.Status, &e.PosterURL, &e.Description, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, e)
+	}
+	dbLog(ctx, r.log, "event.list_public", sqlEventListPublic, start, nil,
+		slog.Int("limit", limit), slog.Int("offset", offset), slog.Int("count", len(result)))
+	return result, nil
+}
+
 func (r *EventRepository) GetByID(ctx context.Context, id string) (entity.Event, error) {
 	start := time.Now()
 	var e entity.Event
 	err := r.pool.QueryRow(ctx, sqlEventGetByID, id).
-		Scan(&e.ID, &e.Name, &e.SaleOpensAt, &e.Status, &e.CreatedAt)
+		Scan(&e.ID, &e.Name, &e.SaleOpensAt, &e.Status, &e.PosterURL, &e.Description, &e.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			dbLog(ctx, r.log, "event.get_by_id", sqlEventGetByID, start, err, slog.String("eventId", id))
@@ -160,7 +197,7 @@ func (r *EventRepository) ExistsByName(ctx context.Context, name string) (bool, 
 func (r *EventRepository) Create(ctx context.Context, e entity.Event) error {
 	start := time.Now()
 	_, err := r.pool.Exec(ctx, sqlEventInsert,
-		e.ID, e.Name, e.SaleOpensAt, e.Status, e.CreatedAt)
+		e.ID, e.Name, e.SaleOpensAt, e.Status, e.PosterURL, e.Description, e.CreatedAt)
 	dbLog(ctx, r.log, "event.create", sqlEventInsert, start, err,
 		slog.String("eventId", e.ID),
 		slog.String("name", e.Name))
@@ -173,7 +210,7 @@ func (r *EventRepository) Create(ctx context.Context, e entity.Event) error {
 func (r *EventRepository) Update(ctx context.Context, e entity.Event) error {
 	start := time.Now()
 	_, err := r.pool.Exec(ctx, sqlEventUpdate,
-		e.ID, e.Name, e.SaleOpensAt, e.Status)
+		e.ID, e.Name, e.SaleOpensAt, e.Status, e.PosterURL, e.Description)
 	dbLog(ctx, r.log, "event.update", sqlEventUpdate, start, err,
 		slog.String("eventId", e.ID),
 		slog.String("status", string(e.Status)))
