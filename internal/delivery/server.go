@@ -24,6 +24,7 @@ func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *ka
 	// termasuk logging middleware.
 	logged := middleware.RequestLogger(slog.Default())(mux)
 	traced := middleware.OtelMiddleware("event-service")(logged)
+	corsed := middleware.CORSMiddleware("*")(traced)
 
 	closeFn := func() {
 		pool.Close()
@@ -34,5 +35,5 @@ func New(_ context.Context, cfg *config.Config, pool *pgxpool.Pool, producer *ka
 			valkeyClient.Close()
 		}
 	}
-	return traced, closeFn, nil
+	return corsed, closeFn, nil
 }
