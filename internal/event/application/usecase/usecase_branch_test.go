@@ -184,6 +184,14 @@ func (r *errListRepo) ListPaged(_ context.Context, _, _ int) ([]entity.Event, er
 	return nil, errors.New("db list failed")
 }
 
+func (r *errListRepo) ListPagedPublic(_ context.Context, _, _ int) ([]entity.Event, error) {
+	return nil, errors.New("db list failed")
+}
+
 func (r *errListRepo) CountAll(_ context.Context) (int, error) {
+	return 0, errors.New("db count failed")
+}
+
+func (r *errListRepo) CountPublic(_ context.Context) (int, error) {
 	return 0, errors.New("db count failed")
 }
