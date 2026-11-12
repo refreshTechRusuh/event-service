@@ -22,3 +22,6 @@ docker-build: build
 scan:
 	@echo "Running security scan"
 	gosec ./...
+vuln:
+	@echo "Running vulnerability scan"
+	govulncheck ./...
